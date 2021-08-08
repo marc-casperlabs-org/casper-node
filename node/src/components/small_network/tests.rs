@@ -293,6 +293,22 @@ fn network_is_complete(
     true
 }
 
+/// Checks whether the given node has exactly this many peers.
+///
+/// A peer is counted as soon as it is either incoming or outgoing.
+fn peer_count_on_node(
+    peer_count: usize,
+    target_node: usize,
+    nodes: &HashMap<NodeId, Runner<ConditionCheckReactor<TestReactor>>>,
+) -> bool {
+    let (_, runner) = nodes
+        .iter()
+        .nth(target_node)
+        .expect("missing node in network");
+
+    runner.reactor().inner().net.peers().len() == peer_count
+}
+
 /// Checks whether or not a given network has at least one other node in it
 fn network_started(net: &Network<TestReactor>) -> bool {
     net.nodes()
@@ -501,4 +517,64 @@ async fn ensure_peers_metric_is_correct() {
 
         net.finalize().await;
     }
+}
+
+/// Ensures asymmetric connections are terminated.
+///
+/// Simulates a node behind a firewall/NAT that does not allow incoming connections by configuring
+/// it to advertise a different address than it actually listens on.
+#[tokio::test]
+async fn ensure_asymmetric_connections_are_swept() {
+    init_logging();
+
+    let mut rng = crate::new_rng();
+
+    // Timeout for initial connection.
+    let connect_timeout = Duration::from_secs(10);
+
+    let mut net: Network<TestReactor> = Network::new();
+
+    // Pick a random port in the higher ranges that is likely to be unused.
+    let first_node_port = testing::unused_port_on_localhost();
+
+    // Node 1 will be the known node.
+    net.add_node_with_config(
+        Config::default_local_net_first_node(first_node_port),
+        &mut rng,
+    )
+    .await
+    .unwrap();
+
+    // Node 2 is an "innocent bystander".
+    net.add_node_with_config(Config::default_local_net(first_node_port), &mut rng)
+        .await
+        .unwrap();
+
+    // Node 3 is the misconfigured node.
+    let mut bad_config = Config::default_local_net(first_node_port);
+    bad_config.public_address = "127.127.127.127:12345".to_owned();
+    net.add_node_with_config(bad_config, &mut rng)
+        .await
+        .unwrap();
+
+    // Wait for every other node to connect to node 1. We are relying on the fact here that
+    // `peer_count` will count asymmetric connections as peers as well.
+    net.settle_on(
+        &mut rng,
+        |nodes| peer_count_on_node(2, 0, nodes),
+        connect_timeout,
+    )
+    .await;
+
+    // let blocklist = HashSet::new();
+    // // This should not make a difference at all, but we're paranoid, so check again.
+    // assert!(
+    //     network_is_complete(&blocklist, net.nodes()),
+    //     "network did not stay connected after being settled"
+    // );
+
+    // // Now the network should have an appropriate number of peers.
+
+    // // This test will run multiple times, so ensure we cleanup all ports.
+    net.finalize().await;
 }

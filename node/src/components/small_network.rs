@@ -477,6 +477,8 @@ where
                     effects.extend(self.connection_completed(effect_builder, peer_id));
                 }
 
+                dbg!(&self.connection_symmetries);
+
                 // Now we can start the message reader.
                 let boxed_span = Box::new(span.clone());
                 effects.extend(
