@@ -178,6 +178,11 @@ where
     /// The era supervisor currently does not allow for easy access to the concept of the "current"
     /// era, so we treat the highest era we have seen as the active era.
     highest_era_seen: EraId,
+    /// Stored validators
+    ///
+    /// Similar to the highest era seen so far, there is no convenient way of querying the active
+    /// validator set. For this reason, we cache the validators we learn from added blocks.
+    era_validators: HashMap<EraId, HashSet<PublicKey>>,
 
     /// The outgoing bandwidth limiter.
     #[data_size(skip)]
@@ -318,6 +323,7 @@ where
             server_join_handle: Some(server_join_handle),
             net_metrics,
             highest_era_seen: EraId::new(0),
+            era_validators: Default::default(),
             outgoing_limiter,
             incoming_limiter,
         };
@@ -970,16 +976,48 @@ where
                 effects
             }
             Event::LinearChainAnnouncement(LinearChainAnnouncement::BlockAdded(block)) => {
-                if let Some(next_era_validators) =
-                    block.take_header().maybe_take_next_era_validator_weights()
-                {
-                    let upcoming_validators: HashSet<PublicKey> =
-                        next_era_validators.into_keys().collect();
-                    self.outgoing_limiter
-                        .update_validators(Default::default(), upcoming_validators.clone());
-                    self.incoming_limiter
-                        .update_validators(Default::default(), upcoming_validators);
-                };
+                let era_id = block.header().era_id();
+
+                // Update the highest era if we missed a switch block.
+                self.highest_era_seen = self.highest_era_seen.max(era_id);
+
+                if let Some(next_era_validators) = block.header().next_era_validator_weights() {
+                    // The block was a switch block, since it had a set of next era validators.
+                    // This means the active era changed (or is about to change immediately).
+                    let active_era = era_id + 1;
+                    self.highest_era_seen = self.highest_era_seen.max(active_era);
+
+                    self.era_validators
+                        .insert(active_era, next_era_validators.keys().cloned().collect());
+                }
+
+                // Build a new set of validators.
+                let mut active_validators = HashSet::new();
+
+                if self.highest_era_seen > EraId::new(0) {
+                    if let Some(previous_validators) =
+                        self.era_validators.get(&(self.highest_era_seen - 1))
+                    {
+                        active_validators.extend(previous_validators.iter().cloned())
+                    }
+                }
+
+                if let Some(current_validators) = self.era_validators.get(&self.highest_era_seen) {
+                    active_validators.extend(current_validators.iter().cloned())
+                }
+
+                let upcoming_validators = self
+                    .era_validators
+                    .get(&(self.highest_era_seen + 1))
+                    .cloned()
+                    .unwrap_or_default();
+
+                // Update the limiters.
+                self.outgoing_limiter
+                    .update_validators(active_validators.clone(), upcoming_validators.clone());
+                self.incoming_limiter
+                    .update_validators(active_validators, upcoming_validators);
+
                 Effects::new()
             }
             Event::LinearChainAnnouncement(LinearChainAnnouncement::NewFinalitySignature(_)) => {
