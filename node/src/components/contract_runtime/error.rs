@@ -4,6 +4,7 @@ use casper_execution_engine::{
     core::engine_state::{Error as EngineStateError, StepError},
     storage::error::lmdb::Error as StorageLmdbError,
 };
+use casper_types::EraId;
 
 use crate::{
     components::contract_runtime::ExecutionPreState,
@@ -54,6 +55,12 @@ pub(crate) enum BlockExecutionError {
     /// An error that occurred while getting era validators.
     #[error(transparent)]
     GetEraValidatorsError(#[from] GetEraValidatorsError),
+    /// Missing era validators in a switch block for an era that was expected to be present.
+    #[error("upcoming era validators did not contain validators for {era}")]
+    MissingEraValidators {
+        /// The era ID for which validators could not be retrieved.
+        era: EraId,
+    },
 }
 
 /// An error raised when block execution events are being created for the reactor.

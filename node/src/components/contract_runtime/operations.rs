@@ -119,16 +119,21 @@ pub(super) fn execute_finalized_block(
     let next_era_validator_weights: Option<BTreeMap<PublicKey, U512>> =
         maybe_step_effect_and_upcoming_era_validators
             .as_ref()
-            .and_then(
+            .map(
                 |StepEffectAndUpcomingEraValidators {
                      upcoming_era_validators,
                      ..
                  }| {
+                    let era = finalized_block.era_id().successor();
+
                     upcoming_era_validators
-                        .get(&finalized_block.era_id().successor())
+                        .get(&era)
                         .cloned()
+                        .ok_or(BlockExecutionError::MissingEraValidators { era })
                 },
-            );
+            )
+            .transpose()?;
+
     let block = Block::new(
         parent_hash,
         parent_seed,
