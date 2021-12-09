@@ -15,12 +15,15 @@ use std::{
     time::Instant,
 };
 
+use casper_execution_engine::{
+    core::engine_state::EngineState, storage::global_state::db::DbGlobalState,
+};
 use datasize::DataSize;
 use derive_more::From;
 use prometheus::Registry;
 use reactor::ReactorEvent;
 use serde::Serialize;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[cfg(test)]
 use crate::testing::network::NetworkedReactor;
@@ -711,6 +714,18 @@ impl reactor::Reactor for Reactor {
             }
             _ => chainspec_loader.initial_execution_pre_state(),
         };
+
+        // Kick off migration of data from lmdb to rocksdb in a background task.
+        {
+            let engine_state = Arc::clone(contract_runtime.engine_state());
+            let storage = storage.clone();
+            let background_migration = tokio::task::spawn_blocking(move || {
+                migrate_lmdb_data_to_rocksdb(engine_state, storage)
+            });
+
+            effects.extend(background_migration.ignore());
+        }
+
         contract_runtime.set_initial_state(execution_pre_state);
 
         let block_validator = BlockValidator::new(Arc::clone(chainspec_loader.chainspec()));
@@ -1243,6 +1258,74 @@ impl reactor::Reactor for Reactor {
             .stop_for_upgrade()
             .then(|| ReactorExit::ProcessShouldExit(ExitCode::Success))
     }
+}
+
+/// Migrate data from lmdb to rocksdb.
+pub fn migrate_lmdb_data_to_rocksdb(
+    engine_state: Arc<EngineState<DbGlobalState>>,
+    storage: Storage,
+) {
+    let highest_block_height = match storage.read_highest_block_header() {
+        Ok(Some(highest_block_header)) => highest_block_header.height(),
+        Ok(None) => {
+            info!("didn't find a highest block, will not migrate from lmdb to rocksdb");
+            return;
+        }
+        Err(err) => {
+            error!(?err, "unable to retrieve highest block from storage");
+            return;
+        }
+    };
+
+    let mut total_state_roots_migrated = 0;
+
+    for height in (0..=highest_block_height).rev() {
+        let start = Instant::now();
+        let block_header = match storage.read_block_by_height(height) {
+            Ok(Some(block)) => block.header().clone(),
+            Ok(None) => {
+                error!(
+                    "unable to retrieve block at height {} during migration to rocksdb",
+                    height,
+                );
+                continue;
+            }
+            Err(err) => {
+                error!(
+                    "unable to retrieve parent block at height {} during migration to rocksdb {:?}",
+                    height, err,
+                );
+                continue;
+            }
+        };
+
+        match engine_state
+            .migrate_state_root_to_rocksdb_if_needed(*block_header.state_root_hash(), true)
+        {
+            Ok(true) => {
+                info!(
+                    "successfully migrated state root {} (block height {}) from lmdb to rocksdb in {}ms.",
+                    block_header.state_root_hash(),
+                    block_header.height(),
+                    start.elapsed().as_millis()
+                );
+                total_state_roots_migrated += 1;
+            }
+            Ok(false) => info!(
+                "state root {} (height {}) already migrated.",
+                block_header.state_root_hash(),
+                block_header.height()
+            ),
+            Err(err) => {
+                error!(?err, "error migrating state root");
+            }
+        }
+    }
+
+    info!(
+        "Migration from lmdb to rocksdb completed. {} of {} state roots successfully migrated from lmdb to rocksdb.",
+        total_state_roots_migrated, highest_block_height
+    );
 }
 
 #[cfg(test)]

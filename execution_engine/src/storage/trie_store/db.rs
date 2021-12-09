@@ -5,9 +5,9 @@
 //! ```
 //! use casper_execution_engine::storage::store::Store;
 //! use casper_execution_engine::storage::transaction_source::{Transaction, TransactionSource};
-//! use casper_execution_engine::storage::transaction_source::lmdb::LmdbEnvironment;
+//! use casper_execution_engine::storage::transaction_source::db::LmdbEnvironment;
 //! use casper_execution_engine::storage::trie::{Pointer, PointerBlock, Trie};
-//! use casper_execution_engine::storage::trie_store::lmdb::LmdbTrieStore;
+//! use casper_execution_engine::storage::trie_store::db::LmdbTrieStore;
 //! use casper_hashing::Digest;
 //! use casper_types::bytesrepr::{ToBytes, Bytes};
 //! use lmdb::DatabaseFlags;
@@ -111,7 +111,7 @@ use casper_hashing::Digest;
 use crate::storage::{
     error,
     store::Store,
-    transaction_source::lmdb::LmdbEnvironment,
+    transaction_source::db::{LmdbEnvironment, RocksDb, RocksDbStore},
     trie::Trie,
     trie_store::{self, TrieStore},
 };
@@ -121,7 +121,7 @@ use crate::storage::{
 /// Wraps [`lmdb::Database`].
 #[derive(Debug, Clone)]
 pub struct LmdbTrieStore {
-    db: Database,
+    pub(crate) db: Database,
 }
 
 impl LmdbTrieStore {
@@ -161,3 +161,15 @@ impl<K, V> Store<Digest, Trie<K, V>> for LmdbTrieStore {
 }
 
 impl<K, V> TrieStore<K, V> for LmdbTrieStore {}
+
+impl<K, V> Store<Digest, Trie<K, V>> for RocksDbStore {
+    type Error = error::Error;
+
+    type Handle = RocksDb;
+
+    fn handle(&self) -> Self::Handle {
+        self.rocksdb.clone()
+    }
+}
+
+impl<K, V> TrieStore<K, V> for RocksDbStore {}

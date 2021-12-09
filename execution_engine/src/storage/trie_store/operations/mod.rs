@@ -11,7 +11,7 @@ use std::{
 use tracing::warn;
 
 use casper_hashing::Digest;
-use casper_types::bytesrepr::{self, FromBytes, ToBytes};
+use casper_types::bytesrepr::{self, Bytes, FromBytes, ToBytes};
 
 use crate::{
     shared::newtypes::CorrelationId,
@@ -256,32 +256,40 @@ where
         if !visited.insert(trie_key) {
             continue;
         }
-        let maybe_retrieved_trie: Option<Trie<K, V>> = store.get(txn, &trie_key)?;
+        let maybe_retrieved_trie_bytes: Option<Bytes> = store.get_raw(txn, &trie_key)?;
         // Perform an optional integrity check on the retrieved node.
         if check_integrity {
-            if let Some(trie_value) = &maybe_retrieved_trie {
-                let hash_of_trie_value = {
-                    let node_bytes = trie_value.to_bytes()?;
-                    Digest::hash(&node_bytes)
-                };
+            if let Some(trie_value_bytes) = &maybe_retrieved_trie_bytes {
+                let hash_of_trie_value = Digest::hash(trie_value_bytes);
                 if trie_key != hash_of_trie_value {
                     warn!(
-                        "Trie key {:?} has corrupted value {:?} (hash of value is {:?}); \
-                     adding to list of missing nodes",
-                        trie_key, trie_value, hash_of_trie_value
+                        "Trie key {:?} has corrupted value with hash {:?}; adding to list of missing nodes",
+                        trie_key, hash_of_trie_value,
                     );
                     missing_descendants.push(trie_key);
                     continue;
                 }
             }
         }
+
+        // Optimization: Don't look for descendants of leaves.
+        if let Some(bytes) = maybe_retrieved_trie_bytes.as_ref() {
+            // if this is a leaf
+            if bytes.as_ref()[0] == 0u8 {
+                continue;
+            }
+        }
+
+        let maybe_retrieved_trie: Option<Trie<K, V>> = maybe_retrieved_trie_bytes
+            .map(bytesrepr::deserialize_from_slice)
+            .transpose()?;
+
         match maybe_retrieved_trie {
+            Some(Trie::Leaf { .. }) => unreachable!(),
             // If we can't find the trie_key; it is missing and we'll return it
             None => {
                 missing_descendants.push(trie_key);
             }
-            // If we could retrieve the node and it is a leaf, the search can move on
-            Some(Trie::Leaf { .. }) => (),
             // If we hit a pointer block, queue up all of the nodes it points to
             Some(Trie::Node { pointer_block }) => {
                 for (_, pointer) in pointer_block.as_indexed_pointers() {
