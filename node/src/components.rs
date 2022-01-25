@@ -5,7 +5,7 @@
 pub(crate) mod block_proposer;
 pub(crate) mod block_validator;
 pub(crate) mod chainspec_loader;
-pub(crate) mod consensus;
+pub mod consensus;
 pub(crate) mod console;
 pub mod contract_runtime;
 pub(crate) mod deploy_acceptor;

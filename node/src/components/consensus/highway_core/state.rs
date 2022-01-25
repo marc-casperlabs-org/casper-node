@@ -142,8 +142,8 @@ impl<C: Context> Fault<C> {
 /// Both observers and active validators must instantiate this, pass in all incoming vertices from
 /// peers, and use a [FinalityDetector](../finality_detector/struct.FinalityDetector.html) to
 /// determine the outcome of the consensus process.
-#[derive(Debug, Clone, DataSize, Serialize)]
-pub(crate) struct State<C>
+#[derive(Debug, Clone, DataSize, Deserialize, Serialize)]
+pub struct State<C>
 where
     C: Context,
 {

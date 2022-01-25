@@ -21,7 +21,7 @@
     unused_qualifications
 )]
 
-pub(crate) mod components;
+pub mod components;
 mod config_migration;
 mod data_migration;
 pub(crate) mod effect;

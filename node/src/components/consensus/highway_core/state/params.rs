@@ -1,10 +1,10 @@
 use datasize::DataSize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::{round_len, TimeDiff, Timestamp};
 
 /// Protocol parameters for Highway.
-#[derive(Debug, DataSize, Clone, Serialize)]
+#[derive(Debug, DataSize, Deserialize, Clone, Serialize)]
 pub(crate) struct Params {
     seed: u64,
     block_reward: u64,

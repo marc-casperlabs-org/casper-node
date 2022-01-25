@@ -1,11 +1,11 @@
 use datasize::DataSize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::State;
 use crate::components::consensus::traits::Context;
 
 /// A block: Chains of blocks are the consensus values in the CBC Casper sense.
-#[derive(Clone, DataSize, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, DataSize, Deserialize, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct Block<C>
 where
     C: Context,
