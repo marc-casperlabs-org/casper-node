@@ -14,22 +14,22 @@ use crate::types::TimeDiff;
 // Disallow unknown fields to ensure config files and command-line overrides contain valid keys.
 #[serde(deny_unknown_fields)]
 pub struct CoreConfig {
-    pub(crate) era_duration: TimeDiff,
-    pub(crate) minimum_era_height: u64,
-    pub(crate) validator_slots: u32,
+    pub era_duration: TimeDiff,
+    pub minimum_era_height: u64,
+    pub validator_slots: u32,
     /// Number of eras before an auction actually defines the set of validators.
     /// If you bond with a sufficient bid in era N, you will be a validator in era N +
     /// auction_delay + 1
-    pub(crate) auction_delay: u64,
+    pub auction_delay: u64,
     /// The period after genesis during which a genesis validator's bid is locked.
-    pub(crate) locked_funds_period: TimeDiff,
+    pub locked_funds_period: TimeDiff,
     /// The delay in number of eras for paying out the the unbonding amount.
-    pub(crate) unbonding_delay: u64,
+    pub unbonding_delay: u64,
     /// Round seigniorage rate represented as a fractional number.
     #[data_size(skip)]
-    pub(crate) round_seigniorage_rate: Ratio<u64>,
+    pub round_seigniorage_rate: Ratio<u64>,
     /// Maximum number of associated keys for a single account.
-    pub(crate) max_associated_keys: u32,
+    pub max_associated_keys: u32,
 }
 
 #[cfg(test)]

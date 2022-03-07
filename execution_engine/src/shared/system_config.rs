@@ -19,19 +19,19 @@ pub const DEFAULT_WASMLESS_TRANSFER_COST: u32 = 10_000;
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug, DataSize)]
 pub struct SystemConfig {
     /// Wasmless transfer cost expressed in gas.
-    wasmless_transfer_cost: u32,
+    pub wasmless_transfer_cost: u32,
 
     /// Configuration of auction entrypoint costs.
-    auction_costs: AuctionCosts,
+    pub auction_costs: AuctionCosts,
 
     /// Configuration of mint entrypoint costs.
-    mint_costs: MintCosts,
+    pub mint_costs: MintCosts,
 
     /// Configuration of handle payment entrypoint costs.
-    handle_payment_costs: HandlePaymentCosts,
+    pub handle_payment_costs: HandlePaymentCosts,
 
     /// Configuration of standard payment costs.
-    standard_payment_costs: StandardPaymentCosts,
+    pub standard_payment_costs: StandardPaymentCosts,
 }
 
 impl SystemConfig {

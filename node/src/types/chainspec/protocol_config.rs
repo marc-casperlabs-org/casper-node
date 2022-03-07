@@ -21,17 +21,17 @@ use crate::testing::TestRng;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, DataSize, Debug)]
 pub struct ProtocolConfig {
     #[data_size(skip)]
-    pub(crate) version: ProtocolVersion,
+    pub version: ProtocolVersion,
     /// Whether we need to clear latest blocks back to the switch block just before the activation
     /// point or not.
-    pub(crate) hard_reset: bool,
+    pub hard_reset: bool,
     /// This protocol config applies starting at the era specified in the activation point.
-    pub(crate) activation_point: ActivationPoint,
+    pub activation_point: ActivationPoint,
     /// Any arbitrary updates we might want to make to the global state at the start of the era
     /// specified in the activation point.
-    pub(crate) global_state_update: Option<GlobalStateUpdate>,
+    pub global_state_update: Option<GlobalStateUpdate>,
     /// The era ID in which the last emergency restart happened.
-    pub(crate) last_emergency_restart: Option<EraId>,
+    pub last_emergency_restart: Option<EraId>,
 }
 
 impl ProtocolConfig {

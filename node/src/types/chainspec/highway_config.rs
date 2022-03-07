@@ -16,13 +16,13 @@ use crate::types::TimeDiff;
 #[serde(deny_unknown_fields)]
 pub(crate) struct HighwayConfig {
     #[data_size(skip)]
-    pub(crate) finality_threshold_fraction: Ratio<u64>,
-    pub(crate) minimum_round_exponent: u8,
-    pub(crate) maximum_round_exponent: u8,
+    pub finality_threshold_fraction: Ratio<u64>,
+    pub minimum_round_exponent: u8,
+    pub maximum_round_exponent: u8,
     /// The factor by which rewards for a round are multiplied if the greatest summit has ≤50%
     /// quorum, i.e. no finality.
     #[data_size(skip)]
-    pub(crate) reduced_reward_multiplier: Ratio<u64>,
+    pub reduced_reward_multiplier: Ratio<u64>,
 }
 
 impl HighwayConfig {

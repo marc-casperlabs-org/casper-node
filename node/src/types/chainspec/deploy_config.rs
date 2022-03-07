@@ -23,17 +23,17 @@ use crate::types::TimeDiff;
 // Disallow unknown fields to ensure config files and command-line overrides contain valid keys.
 #[serde(deny_unknown_fields)]
 pub struct DeployConfig {
-    pub(crate) max_payment_cost: Motes,
-    pub(crate) max_ttl: TimeDiff,
-    pub(crate) max_dependencies: u8,
-    pub(crate) max_block_size: u32,
-    pub(crate) max_deploy_size: u32,
-    pub(crate) block_max_deploy_count: u32,
-    pub(crate) block_max_transfer_count: u32,
-    pub(crate) block_gas_limit: u64,
-    pub(crate) payment_args_max_length: u32,
-    pub(crate) session_args_max_length: u32,
-    pub(crate) native_transfer_minimum_motes: u64,
+    pub max_payment_cost: Motes,
+    pub max_ttl: TimeDiff,
+    pub max_dependencies: u8,
+    pub max_block_size: u32,
+    pub max_deploy_size: u32,
+    pub block_max_deploy_count: u32,
+    pub block_max_transfer_count: u32,
+    pub block_gas_limit: u64,
+    pub payment_args_max_length: u32,
+    pub session_args_max_length: u32,
+    pub native_transfer_minimum_motes: u64,
 }
 
 #[cfg(test)]
