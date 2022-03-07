@@ -38,6 +38,7 @@ pub mod cli;
 pub mod crypto;
 pub mod types;
 pub use components::rpc_server::rpcs;
+pub use utils::external::Loadable;
 
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize},
