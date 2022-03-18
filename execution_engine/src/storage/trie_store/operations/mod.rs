@@ -8,7 +8,7 @@ use std::{
     mem,
 };
 
-use tracing::{error, warn};
+use tracing::warn;
 
 use casper_hashing::Digest;
 use casper_types::bytesrepr::{self, Bytes, FromBytes, ToBytes};
@@ -300,7 +300,7 @@ where
             }
             // Couldn't parse; treat as missing and continue
             Err(err) => {
-                error!(?err, "unable to parse trie");
+                warn!(?err, "unable to parse trie");
                 missing_descendants.push(trie_key);
                 continue;
             }
@@ -308,7 +308,9 @@ where
 
         match retrieved_trie {
             // Should be unreachable due to checking the first byte as a shortcut above.
-            Trie::Leaf { .. } => (),
+            Trie::Leaf { .. } => {
+                warn!("did not expect to see a trie leaf in `missing_trie_keys` after shortcut");
+            }
             // If we hit a pointer block, queue up all of the nodes it points to
             Trie::Node { pointer_block } => {
                 for (_, pointer) in pointer_block.as_indexed_pointers() {

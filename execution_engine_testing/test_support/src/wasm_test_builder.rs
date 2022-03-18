@@ -12,6 +12,7 @@ use std::{
 use filesize::PathExt;
 use lmdb::DatabaseFlags;
 use log::LevelFilter;
+use walkdir::WalkDir;
 
 use bytesrepr::FromBytes;
 use casper_execution_engine::{
@@ -63,7 +64,6 @@ use casper_types::{
     DeployHash, DeployInfo, EraId, Gas, Key, KeyTag, PublicKey, RuntimeArgs, StoredValue, Transfer,
     TransferAddr, URef, U512,
 };
-use walkdir::WalkDir;
 
 use crate::{
     utils, ExecuteRequestBuilder, DEFAULT_PROPOSER_ADDR, DEFAULT_PROTOCOL_VERSION, SYSTEM_ADDR,

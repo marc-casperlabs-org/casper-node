@@ -8,7 +8,7 @@
 )]
 #![warn(missing_docs)]
 mod additive_map_diff;
-/// Utilities methods for running the auction in a test or bench context.
+/// Utility methods for running the auction in a test or bench context.
 pub mod auction;
 mod deploy_item_builder;
 mod execute_request_builder;

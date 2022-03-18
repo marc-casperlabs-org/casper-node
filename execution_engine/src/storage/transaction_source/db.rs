@@ -19,7 +19,7 @@ use casper_types::bytesrepr::Bytes;
 
 /// Filename for the LMDB database created by the EE.
 const EE_LMDB_FILENAME: &str = "data.lmdb";
-/// newtype over alt db.
+/// Newtype over RocksDB.
 #[derive(Clone)]
 pub struct RocksDb {
     db: Arc<DBWithThreadMode<MultiThreaded>>,
@@ -83,7 +83,7 @@ pub struct RocksDbStore {
 }
 
 impl RocksDbStore {
-    /// Create a new environment for alternative db.
+    /// Create a new environment for RocksDB.
     pub fn new(
         path: impl AsRef<Path>,
         rocksdb_opts: Options,

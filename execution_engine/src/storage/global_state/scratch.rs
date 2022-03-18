@@ -94,7 +94,10 @@ impl StateReader<Key, StoredValue> for ScratchGlobalStateView {
         }
         let ret = self.view.read(correlation_id, key)?;
         if let Some(value) = ret.as_ref() {
-            self.cache.write().unwrap().insert(*key, value.clone());
+            self.cache
+                .write()
+                .map_err(|_| error::Error::Poison)?
+                .insert(*key, value.clone());
         }
         Ok(ret)
     }

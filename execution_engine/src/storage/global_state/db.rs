@@ -5,7 +5,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use casper_hashing::Digest;
 use casper_types::{
@@ -225,13 +225,18 @@ fn find_missing_descendants(
     missing_trie_keys: &mut Vec<Digest>,
     time_in_missing_trie_keys: &mut Duration,
 ) -> Result<(), error::Error> {
+    // A first bytes of `0` indicates a leaf. We short-circuit the function here to speed things up.
     if let Some(0u8) = value_bytes.get(0) {
         return Ok(());
     }
     let start_trie_keys = Instant::now();
     let trie: Trie<Key, StoredValue> = bytesrepr::deserialize(value_bytes.into())?;
     match trie {
-        Trie::Leaf { .. } => unreachable!(),
+        Trie::Leaf { .. } => {
+            // If `bytesrepr` is functioning correctly, this should never be reached (see
+            // optimization above), but it is still correct do nothing here.
+            warn!("did not expect to see a trie leaf in `find_missing_descendents` after shortcut");
+        }
         Trie::Node { pointer_block } => {
             for (_index, ptr) in pointer_block.as_indexed_pointers() {
                 let ptr = match ptr {

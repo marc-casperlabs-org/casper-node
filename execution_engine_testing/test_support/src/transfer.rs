@@ -51,7 +51,7 @@ pub fn create_initial_accounts_and_run_genesis(
         .commit();
 }
 
-/// Creates a request to that will call the create_accounts.wasm and create test accounts using the
+/// Creates a request that will call the create_accounts.wasm and create test accounts using the
 /// default account for the initial transfer.
 pub fn create_accounts_request(source_accounts: Vec<AccountHash>, amount: U512) -> ExecuteRequest {
     ExecuteRequestBuilder::standard(
