@@ -124,6 +124,12 @@ where
         let (effects_sender, mut effects_receiver) = tokio::sync::mpsc::unbounded_channel();
 
         // Start background thread for running the component.
+
+        // TODO: Use something (spawn_blocking?)
+        // that preserves the tokio runtime in place of `thread::spawn`, allowing us to use the
+        // synchronous `process_effects` directly without the channel.
+        //
+        // Alternatively, pass the handle into `process_effects` instead of using `tokio::spawn`.
         let component_runner = thread::spawn(move || {
             component_runner(
                 effect_builder,
