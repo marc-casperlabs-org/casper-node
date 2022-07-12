@@ -1868,11 +1868,13 @@ where
             None => return Err(Error::NoHighestBlockHeader),
         };
 
-    if let Some(outcome) = should_emergency_upgrade(&ctx, &highest_block_header).await? {
+    if let Some(outcome) =
+        prepare_for_emergency_upgrade_if_needed(&ctx, &highest_block_header).await?
+    {
         return Ok(outcome);
     }
 
-    if let Some(outcome) = should_upgrade(&ctx, &highest_block_header).await? {
+    if let Some(outcome) = prepare_for_upgrade_if_needed(&ctx, &highest_block_header).await? {
         return Ok(outcome);
     }
 
@@ -1957,7 +1959,7 @@ fn verify_trusted_block_header<REv>(ctx: &ChainSyncContext<'_, REv>) -> Result<(
 
 /// Returns `Ok(Some(FastSyncOutcome::ShouldCommitUpgrade))` if we should commit an emergency
 /// upgrade before syncing further, or `Ok(None)` if not.
-async fn should_emergency_upgrade<REv>(
+async fn prepare_for_emergency_upgrade_if_needed<REv>(
     ctx: &ChainSyncContext<'_, REv>,
     highest_block_header: &BlockHeader,
 ) -> Result<Option<FastSyncOutcome>, Error>
@@ -2003,7 +2005,7 @@ where
 
 /// Returns `Ok(Some(FastSyncOutcome::ShouldCommitUpgrade))` if we should commit an upgrade before
 /// syncing further, or `Ok(None)` if not.
-async fn should_upgrade<REv>(
+async fn prepare_for_upgrade_if_needed<REv>(
     ctx: &ChainSyncContext<'_, REv>,
     highest_block_header: &BlockHeader,
 ) -> Result<Option<FastSyncOutcome>, Error>
