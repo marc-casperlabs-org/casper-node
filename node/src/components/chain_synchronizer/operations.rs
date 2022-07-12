@@ -1111,7 +1111,6 @@ where
     }
 
     // Fetch each parent hash one by one until we have the switch block info.
-    // This will crash if we try to get the parent hash of genesis, which is the default [0u8; 32]
     let mut current_header_to_walk_back_from = ctx.trusted_block_header().clone();
     loop {
         // Check that we are not restarting right after an emergency restart, which is too early
