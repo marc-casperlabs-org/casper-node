@@ -1101,6 +1101,8 @@ where
     );
 
     // If the trusted block's version is newer than ours we return an error
+    // TODO: This check can potentially be removed, as it seems to be a duplicate of the one found
+    //       in `verify_trusted_block_header`.
     if ctx.trusted_block_header().protocol_version() > ctx.config.protocol_version() {
         return Err(Error::RetrievedBlockHeaderFromFutureVersion {
             current_version: ctx.config.protocol_version(),
