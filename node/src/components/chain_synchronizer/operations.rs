@@ -792,6 +792,13 @@ where
                     continue;
                 }
 
+                if trusted_key_block_info.era_id() != item.header().era_id() {
+                    error!(trusted_key_block_info_era_id=trusted_key_block_info.era_id().value(),
+                        item_header_era_id=item.header().era_id().value(),
+                        "did not expect mismatch between trusted_key_block_info era id and item_header era id"
+                    );
+                }
+
                 if let Err(error) = consensus::check_sufficient_finality_signatures(
                     trusted_key_block_info.validator_weights(),
                     ctx.config.finality_threshold_fraction(),
