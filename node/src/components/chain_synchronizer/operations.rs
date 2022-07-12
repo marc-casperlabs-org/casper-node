@@ -739,6 +739,7 @@ where
 
     // Ensure we have at least one peer to which we're bidirectionally connected before trying to
     // fetch the data.
+    // TODO: Refresh peers while attempting to fetch, not only at the start.
     let mut peers = vec![];
     for _ in 0..ctx.config.max_retries_while_not_connected() {
         peers = get_filtered_fully_connected_peers(ctx).await;
