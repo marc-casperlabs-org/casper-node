@@ -247,10 +247,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{convert::Infallible, num::NonZeroUsize, sync::Arc};
+    use std::{convert::Infallible, io, num::NonZeroUsize, sync::Arc};
 
     use bytes::{Buf, Bytes};
-    use futures::{channel::mpsc, FutureExt, SinkExt, StreamExt};
+    use futures::{channel::mpsc, stream, FutureExt, SinkExt, StreamExt};
 
     use crate::{
         fragmented::{Defragmentizer, DefragmentizerError},
@@ -298,32 +298,22 @@ mod tests {
         assert_eq!(contents, b"\x0001234567\x00890abcde\x00fghijklm\xFFno");
     }
 
+    /// Builds a sequence of frames that could have been read from the network.
+    fn build_frame_input(frames: &[&'static [u8]]) -> Vec<io::Result<Bytes>> {
+        frames
+            .into_iter()
+            .map(|&x| Bytes::from(x))
+            .map(Result::Ok)
+            .collect()
+    }
+
     #[test]
     fn defragmentizer_basic() {
         let frame_data = b"01234567890abcdefghijklmno";
-        let mut fragments: Vec<Bytes> = [b"\x0001234567", b"\x00890abcde", b"\x00fghijklm"]
-            .into_iter()
-            .map(|bytes| bytes.as_slice().into())
-            .collect();
-        fragments.push(b"\xFFno".as_slice().into());
+        let frames =
+            build_frame_input(&[b"\x0001234567", b"\x00890abcde", b"\x00fghijklm", b"\xFFno"]);
 
-        let (mut sender, receiver) =
-            mpsc::channel::<Result<Bytes, Infallible>>(CHANNEL_BUFFER_SIZE);
-        for fragment in fragments {
-            sender
-                .send(Ok(fragment))
-                .now_or_never()
-                .expect("Couldn't send encoded frame")
-                .unwrap();
-        }
-        sender
-            .flush()
-            .now_or_never()
-            .expect("Couldn't flush")
-            .unwrap();
-        drop(sender);
-
-        let defragmentizer = Defragmentizer::new(frame_data.len(), receiver);
+        let defragmentizer = Defragmentizer::new(frame_data.len(), stream::iter(frames));
         let frames: Vec<Bytes> = defragmentizer
             .map(|bytes_result| bytes_result.unwrap())
             .collect()
@@ -373,34 +363,9 @@ mod tests {
 
     #[test]
     fn defragmentizer_incomplete_frame() {
-        let frame_data = b"01234567890abcdefghijklmno";
-        let mut fragments: Vec<Bytes> = [b"\x0001234567", b"\x00890abcde", b"\x00fghijklm"]
-            .into_iter()
-            .map(|bytes| bytes.as_slice().into())
-            .collect();
-        fragments.push(b"\xFFno".as_slice().into());
+        let frames = build_frame_input(&[b"\x0001234567", b"\x00890abcde"]);
 
-        let (mut sender, receiver) =
-            mpsc::channel::<Result<Bytes, Infallible>>(CHANNEL_BUFFER_SIZE);
-        // Send just 2 frames and prematurely close the stream.
-        sender
-            .send(Ok(fragments[0].clone()))
-            .now_or_never()
-            .expect("Couldn't send encoded frame")
-            .unwrap();
-        sender
-            .send(Ok(fragments[1].clone()))
-            .now_or_never()
-            .expect("Couldn't send encoded frame")
-            .unwrap();
-        sender
-            .flush()
-            .now_or_never()
-            .expect("Couldn't flush")
-            .unwrap();
-        drop(sender);
-
-        let mut defragmentizer = Defragmentizer::new(frame_data.len(), receiver);
+        let mut defragmentizer = Defragmentizer::new(1024, stream::iter(frames));
         // Ensure we don't incorrectly yield a frame.
         assert_eq!(
             defragmentizer
