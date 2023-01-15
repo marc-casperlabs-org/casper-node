@@ -2246,3 +2246,94 @@ where
         Some(self.params.min_block_time())
     }
 }
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::{
+        components::consensus::{utils::ValidatorIndex, ClContext},
+        testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
+    };
+
+    use super::{
+        message::{
+            Content, ContentDiscriminants, Message, MessageDiscriminants, SignedMessage,
+            SyncResponse,
+        },
+        proposal::Proposal,
+    };
+
+    impl LargestSpecimen for Message<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            largest_variant::<Self, MessageDiscriminants, _, _>(
+                estimator,
+                |variant| match variant {
+                    MessageDiscriminants::SyncResponse => todo!(),
+                    MessageDiscriminants::Proposal => todo!(),
+                    MessageDiscriminants::Signed => todo!(),
+                    MessageDiscriminants::Evidence => todo!(),
+                },
+            )
+        }
+    }
+
+    impl LargestSpecimen for SyncResponse<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            SyncResponse {
+                round_id: LargestSpecimen::largest_specimen(estimator),
+                proposal_or_hash: LargestSpecimen::largest_specimen(estimator),
+                echo_sigs: todo!(),
+                true_vote_sigs: todo!(),
+                false_vote_sigs: todo!(),
+                signed_messages: todo!(),
+                evidence: todo!(),
+                instance_id: todo!(),
+            }
+        }
+    }
+
+    impl LargestSpecimen for Proposal<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            Proposal {
+                timestamp: LargestSpecimen::largest_specimen(estimator),
+                maybe_block: LargestSpecimen::largest_specimen(estimator),
+                maybe_parent_round_id: LargestSpecimen::largest_specimen(estimator),
+                inactive: todo!("how many?"),
+            }
+        }
+    }
+
+    impl LargestSpecimen for ValidatorIndex {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            u32::largest_specimen(estimator).into()
+        }
+    }
+
+    impl LargestSpecimen for SignedMessage<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            let secret = todo!();
+            SignedMessage::sign_new(
+                LargestSpecimen::largest_specimen(estimator),
+                LargestSpecimen::largest_specimen(estimator),
+                LargestSpecimen::largest_specimen(estimator),
+                LargestSpecimen::largest_specimen(estimator),
+                secret,
+            )
+        }
+    }
+
+    impl LargestSpecimen for Content<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            largest_variant::<Self, ContentDiscriminants, _, _>(
+                estimator,
+                |variant| match variant {
+                    ContentDiscriminants::Echo => {
+                        Content::Echo(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    ContentDiscriminants::Vote => {
+                        Content::Vote(LargestSpecimen::largest_specimen(estimator))
+                    }
+                },
+            )
+        }
+    }
+}

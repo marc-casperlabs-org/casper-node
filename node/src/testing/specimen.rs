@@ -3,15 +3,22 @@
 //! Structs implementing the specimen trait allow for specific sample instances being created, such
 //! as the biggest possible.
 
-use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6};
+use std::{
+    net::{Ipv6Addr, SocketAddr, SocketAddrV6},
+    sync::Arc,
+};
 
 use casper_hashing::Digest;
 use casper_types::{
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
-    AsymmetricType, EraId, ProtocolVersion, SemVer, SignatureDiscriminants,
+    AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, Timestamp,
+    DEPLOY_HASH_LENGTH,
 };
+use either::Either;
 use serde::Serialize;
 use strum::IntoEnumIterator;
+
+use crate::types::{Approval, BlockPayload, DeployHashWithApprovals};
 
 /// The largest valid unicode codepoint that can be encoded to UTF-8.
 pub(crate) const HIGHEST_UNICODE_CODEPOINT: char = '\u{10FFFF}';
@@ -66,6 +73,31 @@ where
         .into_iter()
         .next()
         .expect("should have at least one candidate")
+}
+
+/// Generates a vec of a given size filled with the largest specimen.
+pub(crate) fn vec_of_largest_speciment<T: LargestSpecimen, E: SizeEstimator>(
+    estimator: &E,
+    count: usize,
+) -> Vec<T> {
+    let mut vec = Vec::new();
+    for _ in 0..count {
+        vec.push(LargestSpecimen::largest_specimen(estimator));
+    }
+    vec
+}
+
+/// Generates a vec of the largest specimen, with a size from a property.
+pub(crate) fn vec_prop_specimen<T: LargestSpecimen, E: SizeEstimator>(
+    estimator: &E,
+    parameter_name: &'static str,
+) -> Vec<T> {
+    let mut count = estimator.require_parameter(parameter_name);
+    if count < 0 {
+        count = 0;
+    }
+
+    vec_of_largest_speciment(estimator, count as usize)
 }
 
 impl LargestSpecimen for SocketAddr {
@@ -127,6 +159,43 @@ where
     }
 }
 
+impl<T> LargestSpecimen for Box<T>
+where
+    T: LargestSpecimen,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        Box::new(LargestSpecimen::largest_specimen(estimator))
+    }
+}
+
+impl<T> LargestSpecimen for Arc<T>
+where
+    T: LargestSpecimen,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        Arc::new(LargestSpecimen::largest_specimen(estimator))
+    }
+}
+
+// various third party crates
+
+impl<L, R> LargestSpecimen for Either<L, R>
+where
+    L: LargestSpecimen + Serialize,
+    R: LargestSpecimen + Serialize,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        let l = L::largest_specimen(estimator);
+        let r = R::largest_specimen(estimator);
+
+        if estimator.estimate(&l) >= estimator.estimate(&r) {
+            Either::Left(l)
+        } else {
+            Either::Right(r)
+        }
+    }
+}
+
 // impls for `casper_types`, which is technically a foreign crate -- so we put them here.
 impl LargestSpecimen for ProtocolVersion {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
@@ -174,10 +243,51 @@ impl LargestSpecimen for EraId {
     }
 }
 
+impl LargestSpecimen for Timestamp {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        Timestamp::MAX
+    }
+}
+
 // impls for `casper_hashing`, which is technically a foreign crate -- so we put them here.
 impl LargestSpecimen for Digest {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         // Hashes are fixed size by definition, so any value will do.
         Digest::hash("")
+    }
+}
+
+impl LargestSpecimen for BlockPayload {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        BlockPayload::new(
+            vec_prop_specimen(estimator, "max_deploys_per_block"),
+            vec_prop_specimen(estimator, "max_transfers_per_block"),
+            vec_prop_specimen(estimator, "max_accusations_per_block"),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
+impl LargestSpecimen for DeployHashWithApprovals {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        DeployHashWithApprovals::new(
+            LargestSpecimen::largest_specimen(estimator),
+            todo!("how many approvals are there in this?"),
+        )
+    }
+}
+
+impl LargestSpecimen for DeployHash {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        DeployHash::new([0xFFu8; DEPLOY_HASH_LENGTH])
+    }
+}
+
+impl LargestSpecimen for Approval {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        Approval::from_parts(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
     }
 }
