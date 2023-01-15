@@ -2260,6 +2260,7 @@ mod specimen_support {
             SyncResponse,
         },
         proposal::Proposal,
+        SyncRequest,
     };
 
     impl LargestSpecimen for Message<ClContext> {
@@ -2273,6 +2274,23 @@ mod specimen_support {
                     MessageDiscriminants::Evidence => todo!(),
                 },
             )
+        }
+    }
+
+    impl LargestSpecimen for SyncRequest<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            SyncRequest {
+                round_id: LargestSpecimen::largest_specimen(estimator),
+                proposal_hash: LargestSpecimen::largest_specimen(estimator),
+                has_proposal: LargestSpecimen::largest_specimen(estimator),
+                first_validator_idx: LargestSpecimen::largest_specimen(estimator),
+                echoes: LargestSpecimen::largest_specimen(estimator),
+                true_votes: LargestSpecimen::largest_specimen(estimator),
+                false_votes: LargestSpecimen::largest_specimen(estimator),
+                active: LargestSpecimen::largest_specimen(estimator),
+                faulty: LargestSpecimen::largest_specimen(estimator),
+                instance_id: LargestSpecimen::largest_specimen(estimator),
+            }
         }
     }
 

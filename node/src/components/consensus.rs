@@ -373,8 +373,8 @@ mod specimen_support {
     use crate::testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator};
 
     use super::{
-        ClContext, ConsensusMessage, ConsensusMessageDiscriminants, EraMessage,
-        EraMessageDiscriminants,
+        ClContext, ConsensusMessage, ConsensusMessageDiscriminants, ConsensusRequestMessage,
+        EraMessage, EraMessageDiscriminants, EraRequest,
     };
 
     impl LargestSpecimen for ConsensusMessage {
@@ -393,6 +393,21 @@ mod specimen_support {
                     }
                 }
             })
+        }
+    }
+
+    impl LargestSpecimen for ConsensusRequestMessage {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            ConsensusRequestMessage {
+                era_id: LargestSpecimen::largest_specimen(estimator),
+                payload: LargestSpecimen::largest_specimen(estimator),
+            }
+        }
+    }
+
+    impl LargestSpecimen for EraRequest<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            EraRequest::Zug(LargestSpecimen::largest_specimen(estimator))
         }
     }
 

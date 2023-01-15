@@ -150,6 +150,12 @@ impl LargestSpecimen for u64 {
     }
 }
 
+impl LargestSpecimen for u128 {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        u128::MAX
+    }
+}
+
 impl<T> LargestSpecimen for Option<T>
 where
     T: LargestSpecimen,

@@ -230,8 +230,10 @@ mod specimen_support {
             largest_variant::<Self, MessageDiscriminants, _, _>(
                 estimator,
                 |variant| match variant {
-                    MessageDiscriminants::Consensus => todo!(),
-                    MessageDiscriminants::ConsensusRequest => todo!(),
+                    MessageDiscriminants::Consensus => LargestSpecimen::largest_specimen(estimator),
+                    MessageDiscriminants::ConsensusRequest => {
+                        LargestSpecimen::largest_specimen(estimator)
+                    }
                     MessageDiscriminants::BlockGossiper => todo!(),
                     MessageDiscriminants::DeployGossiper => todo!(),
                     MessageDiscriminants::FinalitySignatureGossiper => todo!(),
