@@ -8,17 +8,26 @@ use std::{
     sync::Arc,
 };
 
+use casper_execution_engine::core::engine_state::{
+    executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
+};
 use casper_hashing::Digest;
 use casper_types::{
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
-    AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, Timestamp,
-    DEPLOY_HASH_LENGTH,
+    AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, TimeDiff,
+    Timestamp, DEPLOY_HASH_LENGTH,
 };
 use either::Either;
 use serde::Serialize;
 use strum::IntoEnumIterator;
 
-use crate::types::{Approval, BlockPayload, DeployHashWithApprovals};
+use crate::{
+    components::consensus::EraReport,
+    types::{
+        Approval, ApprovalsHash, Block, BlockBody, BlockHash, BlockPayload, Deploy,
+        DeployHashWithApprovals, DeployId, FinalitySignature, FinalitySignatureId, FinalizedBlock,
+    },
+};
 
 /// The largest valid unicode codepoint that can be encoded to UTF-8.
 pub(crate) const HIGHEST_UNICODE_CODEPOINT: char = '\u{10FFFF}';
@@ -255,6 +264,85 @@ impl LargestSpecimen for Timestamp {
     }
 }
 
+impl LargestSpecimen for TimeDiff {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        TimeDiff::from_millis(LargestSpecimen::largest_specimen(estimator))
+    }
+}
+
+impl LargestSpecimen for Block {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        Block::new(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            todo!("era validator weights"),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+        .expect("did not expect largest speciment creation of block to fail")
+    }
+}
+
+impl LargestSpecimen for FinalizedBlock {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        FinalizedBlock::new(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
+impl LargestSpecimen for FinalitySignature {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        FinalitySignature::new(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
+impl LargestSpecimen for FinalitySignatureId {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        FinalitySignatureId {
+            block_hash: LargestSpecimen::largest_specimen(estimator),
+            era_id: LargestSpecimen::largest_specimen(estimator),
+            public_key: LargestSpecimen::largest_specimen(estimator),
+        }
+    }
+}
+
+impl<T> LargestSpecimen for EraReport<T>
+where
+    T: LargestSpecimen,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        EraReport {
+            equivocators: todo!("max number of equivs?"),
+            rewards: todo!("max reward struct?"),
+            inactive_validators: todo!("max number of inactive?"),
+        }
+    }
+}
+
+impl LargestSpecimen for BlockHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        BlockHash::new(LargestSpecimen::largest_specimen(estimator))
+    }
+}
+
+impl LargestSpecimen for BlockBody {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!()
+    }
+}
+
 // impls for `casper_hashing`, which is technically a foreign crate -- so we put them here.
 impl LargestSpecimen for Digest {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
@@ -289,11 +377,91 @@ impl LargestSpecimen for DeployHash {
     }
 }
 
+impl LargestSpecimen for Deploy {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        Deploy::new(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            todo!("generate maximum number of unique dependencies"),
+            todo!("implement largest chain name"),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            todo!("generate suitable secret key"),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
+impl LargestSpecimen for DeployId {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        DeployId::new(
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
 impl LargestSpecimen for Approval {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         Approval::from_parts(
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
         )
+    }
+}
+
+impl LargestSpecimen for ApprovalsHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        ApprovalsHash::compute(&Default::default()).expect("empty approvals hash should compute")
+    }
+}
+
+// EE impls
+impl LargestSpecimen for ExecutableDeployItem {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        largest_variant::<Self, ExecutableDeployItemDiscriminants, _, _>(estimator, |variant| {
+            match variant {
+                ExecutableDeployItemDiscriminants::ModuleBytes => {
+                    ExecutableDeployItem::ModuleBytes {
+                        module_bytes: todo!("how to create maximum size contract bytes?"),
+                        args: todo!("how are runtime arguments limited?"),
+                    }
+                }
+                ExecutableDeployItemDiscriminants::StoredContractByHash => {
+                    ExecutableDeployItem::StoredContractByHash {
+                        hash: todo!(),
+                        entry_point: todo!("whats the maximum length for an entry point?"),
+                        args: todo!(),
+                    }
+                }
+                ExecutableDeployItemDiscriminants::StoredContractByName => {
+                    ExecutableDeployItem::StoredContractByName {
+                        name: todo!("what's the max length for a contract stored by name?"),
+                        entry_point: todo!(),
+                        args: todo!(),
+                    }
+                }
+                ExecutableDeployItemDiscriminants::StoredVersionedContractByHash => {
+                    ExecutableDeployItem::StoredVersionedContractByHash {
+                        hash: todo!(),
+                        version: todo!(),
+                        entry_point: todo!(),
+                        args: todo!(),
+                    }
+                }
+                ExecutableDeployItemDiscriminants::StoredVersionedContractByName => {
+                    ExecutableDeployItem::StoredVersionedContractByName {
+                        name: todo!(),
+                        version: todo!(),
+                        entry_point: todo!(),
+                        args: todo!(),
+                    }
+                }
+                ExecutableDeployItemDiscriminants::Transfer => {
+                    ExecutableDeployItem::Transfer { args: todo!() }
+                }
+            }
+        })
     }
 }

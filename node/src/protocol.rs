@@ -230,17 +230,31 @@ mod specimen_support {
             largest_variant::<Self, MessageDiscriminants, _, _>(
                 estimator,
                 |variant| match variant {
-                    MessageDiscriminants::Consensus => LargestSpecimen::largest_specimen(estimator),
-                    MessageDiscriminants::ConsensusRequest => {
-                        LargestSpecimen::largest_specimen(estimator)
+                    MessageDiscriminants::Consensus => {
+                        Message::Consensus(LargestSpecimen::largest_specimen(estimator))
                     }
-                    MessageDiscriminants::BlockGossiper => todo!(),
-                    MessageDiscriminants::DeployGossiper => todo!(),
-                    MessageDiscriminants::FinalitySignatureGossiper => todo!(),
-                    MessageDiscriminants::AddressGossiper => todo!(),
+                    MessageDiscriminants::ConsensusRequest => {
+                        Message::ConsensusRequest(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    MessageDiscriminants::BlockGossiper => {
+                        Message::BlockGossiper(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    MessageDiscriminants::DeployGossiper => {
+                        Message::DeployGossiper(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    MessageDiscriminants::FinalitySignatureGossiper => {
+                        Message::FinalitySignatureGossiper(LargestSpecimen::largest_specimen(
+                            estimator,
+                        ))
+                    }
+                    MessageDiscriminants::AddressGossiper => {
+                        Message::AddressGossiper(LargestSpecimen::largest_specimen(estimator))
+                    }
                     MessageDiscriminants::GetRequest => todo!(),
                     MessageDiscriminants::GetResponse => todo!(),
-                    MessageDiscriminants::FinalitySignature => todo!(),
+                    MessageDiscriminants::FinalitySignature => {
+                        Message::FinalitySignature(LargestSpecimen::largest_specimen(estimator))
+                    }
                 },
             )
         }
