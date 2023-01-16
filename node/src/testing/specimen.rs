@@ -5,9 +5,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    iter::{self, Rev},
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
-    ops::Range,
     sync::Arc,
 };
 
@@ -433,15 +431,12 @@ impl LargestSpecimen for FinalitySignatureId {
     }
 }
 
-impl<T> LargestSpecimen for EraReport<T>
-where
-    T: LargestSpecimen,
-{
+impl LargestSpecimen for EraReport<PublicKey> {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         EraReport {
-            equivocators: todo!("max number of equivs?"),
-            rewards: todo!("max reward struct?"),
-            inactive_validators: todo!("max number of inactive?"),
+            equivocators: vec_prop_specimen(estimator, "validator_count"),
+            rewards: btree_map_distinct_from_prop(estimator, "validator_count"),
+            inactive_validators: vec_prop_specimen(estimator, "validator_count"),
         }
     }
 }
