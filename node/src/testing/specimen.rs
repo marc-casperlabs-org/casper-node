@@ -102,7 +102,7 @@ where
 }
 
 /// Generates a vec of a given size filled with the largest specimen.
-pub(crate) fn vec_of_largest_speciment<T: LargestSpecimen, E: SizeEstimator>(
+pub(crate) fn vec_of_largest_specimen<T: LargestSpecimen, E: SizeEstimator>(
     estimator: &E,
     count: usize,
 ) -> Vec<T> {
@@ -123,7 +123,7 @@ pub(crate) fn vec_prop_specimen<T: LargestSpecimen, E: SizeEstimator>(
         count = 0;
     }
 
-    vec_of_largest_speciment(estimator, count as usize)
+    vec_of_largest_specimen(estimator, count as usize)
 }
 
 /// Generates a `BTreeMap` with the size taken from a property.
