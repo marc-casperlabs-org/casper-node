@@ -4,6 +4,7 @@
 //! as the biggest possible.
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Arc,
 };
@@ -64,6 +65,17 @@ pub(crate) trait LargestSpecimen {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self;
 }
 
+/// Supports generating a unique sequence of specimen that are as large as possible.
+pub(crate) trait LargeUniqueSequence {
+    /// The generator returned.
+    type Generator: Iterator<Item = Self>;
+
+    /// Create a new generator of the largest possible unique specimen sequence.
+    ///
+    /// Note that multiple calls to this function will return overlapping sequences.
+    fn large_unique_sequence() -> Self::Generator;
+}
+
 /// Produces the largest variant of a specific `enum` using an estimator and a generation function.
 pub(crate) fn largest_variant<T, D, E, F>(estimator: &E, generator: F) -> T
 where
@@ -107,6 +119,74 @@ pub(crate) fn vec_prop_specimen<T: LargestSpecimen, E: SizeEstimator>(
     }
 
     vec_of_largest_speciment(estimator, count as usize)
+}
+
+/// Generates a `BTreeMap` with distinct keys taken from a sequence and max size values.
+pub(crate) fn btree_map_distinct_keys<K, I, V, E>(
+    estimator: &E,
+    keys: I,
+    count: usize,
+) -> BTreeMap<K, V>
+where
+    V: LargestSpecimen,
+    I: Iterator<Item = K>,
+    K: Ord,
+    E: SizeEstimator,
+{
+    let mut map: BTreeMap<K, V> = BTreeMap::new();
+    for key in keys {
+        map.insert(key, LargestSpecimen::largest_specimen(estimator))
+            .expect("duplicate item inserting into distinct keys map");
+    }
+
+    assert_eq!(
+        map.len(),
+        count,
+        "distinct keys map must have expected size"
+    );
+
+    map
+}
+
+/// Generates a `BTreeMap` with the size taken from a property.
+///
+/// Keys are generated uniquely using `LargeUniqueSequence`, while values will be largest specimen.
+pub(crate) fn btree_map_distinct_from_prop<K, V, E>(
+    estimator: &E,
+    parameter_name: &'static str,
+) -> BTreeMap<K, V>
+where
+    V: LargestSpecimen,
+    K: Ord + LargeUniqueSequence,
+    E: SizeEstimator,
+{
+    let mut count = estimator.require_parameter(parameter_name);
+    if count < 0 {
+        count = 0;
+    }
+
+    let keys = K::large_unique_sequence();
+
+    btree_map_distinct_keys(estimator, keys, count as usize)
+}
+
+/// Generates a `BTreeSet` with the size taken from a property.
+///
+/// Value are generated uniquely using `LargeUniqueSequence`.
+pub(crate) fn btree_set_distinct_from_prop<T, E>(
+    estimator: &E,
+    parameter_name: &'static str,
+) -> BTreeSet<T>
+where
+    T: Ord + LargeUniqueSequence,
+    E: SizeEstimator,
+{
+    let mut count = estimator.require_parameter(parameter_name);
+    if count < 0 {
+        count = 0;
+    }
+
+    T::large_unique_sequence().take(count as usize).collect()
 }
 
 impl LargestSpecimen for SocketAddr {
@@ -189,6 +269,34 @@ where
 {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         Arc::new(LargestSpecimen::largest_specimen(estimator))
+    }
+}
+
+impl<T1, T2> LargestSpecimen for (T1, T2)
+where
+    T1: LargestSpecimen,
+    T2: LargestSpecimen,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        (
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
+    }
+}
+
+impl<T1, T2, T3> LargestSpecimen for (T1, T2, T3)
+where
+    T1: LargestSpecimen,
+    T2: LargestSpecimen,
+    T3: LargestSpecimen,
+{
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        (
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+            LargestSpecimen::largest_specimen(estimator),
+        )
     }
 }
 

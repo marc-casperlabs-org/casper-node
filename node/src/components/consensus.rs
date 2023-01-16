@@ -415,7 +415,9 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             largest_variant::<Self, EraMessageDiscriminants, _, _>(estimator, |variant| {
                 match variant {
-                    EraMessageDiscriminants::Zug => EraMessage::Zug(todo!()),
+                    EraMessageDiscriminants::Zug => {
+                        EraMessage::Zug(LargestSpecimen::largest_specimen(estimator))
+                    }
                     EraMessageDiscriminants::Highway => EraMessage::Highway(todo!()),
                 }
             })

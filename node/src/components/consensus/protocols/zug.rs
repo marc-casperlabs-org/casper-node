@@ -2249,9 +2249,14 @@ where
 
 #[cfg(test)]
 mod specimen_support {
+    use std::{iter, ops};
+
     use crate::{
         components::consensus::{utils::ValidatorIndex, ClContext},
-        testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
+        testing::specimen::{
+            btree_map_distinct_from_prop, btree_set_distinct_from_prop, largest_variant,
+            vec_prop_specimen, LargeUniqueSequence, LargestSpecimen, SizeEstimator,
+        },
     };
 
     use super::{
@@ -2268,10 +2273,22 @@ mod specimen_support {
             largest_variant::<Self, MessageDiscriminants, _, _>(
                 estimator,
                 |variant| match variant {
-                    MessageDiscriminants::SyncResponse => todo!(),
-                    MessageDiscriminants::Proposal => todo!(),
-                    MessageDiscriminants::Signed => todo!(),
-                    MessageDiscriminants::Evidence => todo!(),
+                    MessageDiscriminants::SyncResponse => {
+                        Message::SyncResponse(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    MessageDiscriminants::Proposal => Message::Proposal {
+                        round_id: LargestSpecimen::largest_specimen(estimator),
+                        instance_id: LargestSpecimen::largest_specimen(estimator),
+                        proposal: LargestSpecimen::largest_specimen(estimator),
+                    },
+                    MessageDiscriminants::Signed => {
+                        Message::Signed(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    MessageDiscriminants::Evidence => Message::Evidence(
+                        LargestSpecimen::largest_specimen(estimator),
+                        LargestSpecimen::largest_specimen(estimator),
+                        LargestSpecimen::largest_specimen(estimator),
+                    ),
                 },
             )
         }
@@ -2294,17 +2311,25 @@ mod specimen_support {
         }
     }
 
+    impl LargeUniqueSequence for ValidatorIndex {
+        type Generator = iter::Map<iter::Rev<ops::Range<u32>>, fn(u32) -> ValidatorIndex>;
+
+        fn large_unique_sequence() -> Self::Generator {
+            Iterator::map((0..u32::MAX).rev(), ValidatorIndex::from)
+        }
+    }
+
     impl LargestSpecimen for SyncResponse<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             SyncResponse {
                 round_id: LargestSpecimen::largest_specimen(estimator),
                 proposal_or_hash: LargestSpecimen::largest_specimen(estimator),
-                echo_sigs: todo!(),
-                true_vote_sigs: todo!(),
-                false_vote_sigs: todo!(),
-                signed_messages: todo!(),
-                evidence: todo!(),
-                instance_id: todo!(),
+                echo_sigs: btree_map_distinct_from_prop(estimator, "validator_count"),
+                true_vote_sigs: btree_map_distinct_from_prop(estimator, "validator_count"),
+                false_vote_sigs: btree_map_distinct_from_prop(estimator, "validator_count"),
+                signed_messages: vec_prop_specimen(estimator, "validator_count"),
+                evidence: vec_prop_specimen(estimator, "validator_count"),
+                instance_id: LargestSpecimen::largest_specimen(estimator),
             }
         }
     }
@@ -2315,7 +2340,7 @@ mod specimen_support {
                 timestamp: LargestSpecimen::largest_specimen(estimator),
                 maybe_block: LargestSpecimen::largest_specimen(estimator),
                 maybe_parent_round_id: LargestSpecimen::largest_specimen(estimator),
-                inactive: todo!("how many?"),
+                inactive: Some(btree_set_distinct_from_prop(estimator, "validator_count")),
             }
         }
     }
