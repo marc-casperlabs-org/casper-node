@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use datasize::DataSize;
 use itertools::Itertools;
@@ -35,7 +38,7 @@ pub(super) enum ShouldStore {
         block_signatures: BlockSignatures,
     },
     MarkComplete(MetaBlock),
-    SingleSignature(FinalitySignature),
+    SingleSignature(Arc<FinalitySignature>),
     Nothing,
 }
 
@@ -109,9 +112,9 @@ impl BlockAcceptor {
 
     pub(super) fn register_finality_signature(
         &mut self,
-        finality_signature: FinalitySignature,
+        finality_signature: Arc<FinalitySignature>,
         peer: Option<NodeId>,
-    ) -> Result<Option<FinalitySignature>, AcceptorError> {
+    ) -> Result<Option<Arc<FinalitySignature>>, AcceptorError> {
         if self.block_hash != finality_signature.block_hash {
             return Err(AcceptorError::BlockHashMismatch {
                 expected: self.block_hash,
@@ -145,7 +148,7 @@ impl BlockAcceptor {
             self.signatures
                 .entry(finality_signature.public_key.clone())
                 .and_modify(|(_, senders)| senders.extend(peer))
-                .or_insert_with(|| (finality_signature, peer.into_iter().collect()));
+                .or_insert_with(|| ((*finality_signature).clone(), peer.into_iter().collect()));
             return Ok(None);
         }
 
@@ -180,7 +183,7 @@ impl BlockAcceptor {
         self.signatures
             .entry(finality_signature.public_key.clone())
             .and_modify(|(_, senders)| senders.extend(peer))
-            .or_insert_with(|| (finality_signature.clone(), peer.into_iter().collect()));
+            .or_insert_with(|| ((*finality_signature).clone(), peer.into_iter().collect()));
 
         if had_sufficient_finality && is_new {
             // we received this finality signature after putting the block & earlier signatures

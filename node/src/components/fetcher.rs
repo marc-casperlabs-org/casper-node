@@ -133,7 +133,7 @@ where
             Event::TimeoutPeer { id, peer } => {
                 self.signal(id.clone(), Err(Error::TimedOut { id, peer }), peer)
             }
-            Event::PutToStorage { item, peer } => self.signal(item.id(), Ok(*item), peer),
+            Event::PutToStorage { item, peer } => self.signal(item.id(), Ok((*item).clone()), peer),
         }
     }
 

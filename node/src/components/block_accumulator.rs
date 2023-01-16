@@ -405,7 +405,7 @@ impl BlockAccumulator {
     fn register_finality_signature<REv>(
         &mut self,
         effect_builder: EffectBuilder<REv>,
-        finality_signature: FinalitySignature,
+        finality_signature: Arc<FinalitySignature>,
         sender: Option<NodeId>,
     ) -> Effects<Event>
     where
@@ -797,14 +797,12 @@ impl<REv: ReactorEvent> Component<REv> for BlockAccumulator {
                 self.register_block(effect_builder, meta_block, Some(sender))
             }
             Event::CreatedFinalitySignature { finality_signature } => {
-                self.register_finality_signature(effect_builder, *finality_signature, None)
+                self.register_finality_signature(effect_builder, finality_signature, None)
             }
             Event::ReceivedFinalitySignature {
                 finality_signature,
                 sender,
-            } => {
-                self.register_finality_signature(effect_builder, *finality_signature, Some(sender))
-            }
+            } => self.register_finality_signature(effect_builder, finality_signature, Some(sender)),
             Event::ExecutedBlock { meta_block } => {
                 let height = meta_block.block.header().height();
                 let era_id = meta_block.block.header().era_id();

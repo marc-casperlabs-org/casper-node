@@ -27,7 +27,7 @@ pub(crate) enum Event {
         sender: NodeId,
     },
     CreatedFinalitySignature {
-        finality_signature: Box<FinalitySignature>,
+        finality_signature: Arc<FinalitySignature>,
     },
     ReceivedFinalitySignature {
         finality_signature: Arc<FinalitySignature>,

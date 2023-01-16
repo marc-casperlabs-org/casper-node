@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use futures::FutureExt;
@@ -42,7 +42,7 @@ impl ItemFetcher<FinalitySignature> for Fetcher<FinalitySignature> {
     ) -> StoringState<'a, FinalitySignature> {
         StoringState::Enqueued(
             effect_builder
-                .put_finality_signature_to_storage(item)
+                .put_finality_signature_to_storage(Arc::new(item))
                 .map(|_| ())
                 .boxed(),
         )

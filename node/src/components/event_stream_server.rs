@@ -28,7 +28,7 @@ mod sse_server;
 #[cfg(test)]
 mod tests;
 
-use std::{fmt::Debug, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{fmt::Debug, net::SocketAddr, path::PathBuf};
 
 use datasize::DataSize;
 use tokio::sync::{
@@ -243,9 +243,7 @@ where
                     block_hash: *block.hash(),
                     block: Box::new(JsonBlock::new(&*block, None)),
                 }),
-                Event::DeployAccepted(deploy) => self.broadcast(SseData::DeployAccepted {
-                    deploy: Arc::new(*deploy),
-                }),
+                Event::DeployAccepted(deploy) => self.broadcast(SseData::DeployAccepted { deploy }),
                 Event::DeployProcessed {
                     deploy_hash,
                     deploy_header,

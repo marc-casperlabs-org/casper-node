@@ -701,48 +701,49 @@ fn can_retrieve_store_and_load_deploys() {
     let mut storage = storage_fixture(&harness);
 
     // Create a random deploy, store and load it.
-    let deploy = Arc::new(Deploy::random(&mut harness.rng));
+    let deploy = Deploy::random(&mut harness.rng);
 
-    let was_new = put_deploy(&mut harness, &mut storage, deploy.clone());
+    let was_new = put_deploy(&mut harness, &mut storage, Arc::new(deploy.clone()));
     let block_hash_and_height = BlockHashAndHeight::random(&mut harness.rng);
     // Insert to the deploy hash index as well so that we can perform the GET later.
     // Also check that we don't have an entry there for this deploy.
     assert!(insert_to_deploy_index(
         &mut storage,
-        *deploy.clone(),
+        deploy.clone(),
         block_hash_and_height
     ));
     assert!(was_new, "putting deploy should have returned `true`");
 
     // Storing the same deploy again should work, but yield a result of `false`.
-    let was_new_second_time = put_deploy(&mut harness, &mut storage, deploy.clone());
+    let was_new_second_time =
+        put_deploy(&mut harness, &mut storage, Arc::new(deploy.clone()).clone());
     assert!(
         !was_new_second_time,
         "storing deploy the second time should have returned `false`"
     );
     assert!(!insert_to_deploy_index(
         &mut storage,
-        *deploy.clone(),
+        deploy.clone(),
         block_hash_and_height
     ));
 
     // Retrieve the stored deploy.
     let response = get_naive_deploys(&mut harness, &mut storage, smallvec![*deploy.hash()]);
-    assert_eq!(response, vec![Some(deploy.as_ref().clone())]);
+    assert_eq!(response, vec![Some(deploy.clone())]);
 
     // Finally try to get the metadata as well. Since we did not store any, we expect to get the
     // block hash and height from the indices.
     let (deploy_response, metadata_response) = harness
         .send_request(&mut storage, |responder| {
             StorageRequest::GetDeployAndMetadata {
-                deploy_hash: *deploy.hash(),
+                deploy_hash: deploy.hash().clone(),
                 responder,
             }
             .into()
         })
         .expect("no deploy with metadata returned");
 
-    assert_eq!(deploy_response.into_naive(), *deploy);
+    assert_eq!(deploy_response.into_naive(), deploy);
     match metadata_response {
         DeployMetadataExt::Metadata(_) => {
             panic!("We didn't store any metadata but we received it in the response.")
@@ -1031,15 +1032,15 @@ fn test_legacy_interface() {
     let mut harness = ComponentHarness::default();
     let mut storage = storage_fixture(&harness);
 
-    let deploy = Arc::new(Deploy::random(&mut harness.rng));
-    let was_new = put_deploy(&mut harness, &mut storage, deploy.clone());
+    let deploy = Deploy::random(&mut harness.rng);
+    let was_new = put_deploy(&mut harness, &mut storage, Arc::new(deploy.clone()));
     assert!(was_new);
 
     // Ensure we get the deploy we expect.
     let result = storage
         .get_legacy_deploy(*deploy.hash())
         .expect("should get deploy");
-    assert_eq!(result, Some(LegacyDeploy::from(*deploy)));
+    assert_eq!(result, Some(LegacyDeploy::from(deploy)));
 
     // A non-existent deploy should simply return `None`.
     assert!(storage

@@ -161,7 +161,7 @@ pub(super) trait ItemFetcher<T: FetcherItem + 'static> {
                 )
                 .ignore()
         } else {
-            match Self::put_to_storage(effect_builder, *item.clone()) {
+            match Self::put_to_storage(effect_builder, (*item).clone()) {
                 StoringState::WontStore(item) => self.signal(item.id(), Ok(item), peer),
                 StoringState::Enqueued(store_future) => {
                     store_future.event(move |_| Event::PutToStorage { item, peer })

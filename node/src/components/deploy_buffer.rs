@@ -9,6 +9,7 @@ use std::{
     convert::TryInto,
     iter::FromIterator,
     mem,
+    sync::Arc,
 };
 
 use datasize::DataSize;
@@ -300,7 +301,7 @@ impl DeployBuffer {
     }
 
     /// Update holds considering new proposed block.
-    fn register_block_proposed(&mut self, proposed_block: ProposedBlock<ClContext>) {
+    fn register_block_proposed(&mut self, proposed_block: Arc<ProposedBlock<ClContext>>) {
         let timestamp = &proposed_block.context().timestamp();
         if let Some(hold_set) = self.hold.get_mut(timestamp) {
             debug!(%timestamp, "DeployBuffer: existing hold timestamp extended");
@@ -608,7 +609,7 @@ where
                     Effects::new()
                 }
                 Event::BlockProposed(proposed) => {
-                    self.register_block_proposed(*proposed);
+                    self.register_block_proposed(proposed);
                     Effects::new()
                 }
                 Event::ReceiveDeployGossiped(deploy_id) => {

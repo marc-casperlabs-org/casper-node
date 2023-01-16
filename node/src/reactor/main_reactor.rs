@@ -570,7 +570,9 @@ impl reactor::Reactor for MainReactor {
                         let reactor_event =
                             MainEvent::EventStreamServer(event_stream_server::Event::Fault {
                                 era_id,
-                                public_key: *public_key,
+                                // TODO: Replace with `.unwrap_or_clone()` once stabilized.
+                                //       https://doc.rust-lang.org/std/sync/struct.Arc.html#method.unwrap_or_clone
+                                public_key: (*public_key).clone(),
                                 timestamp,
                             });
                         self.dispatch_event(effect_builder, rng, reactor_event)
@@ -1084,23 +1086,24 @@ impl MainReactor {
 
         if state.register_we_have_tried_to_sign().was_updated() {
             // When this node is a validator in this era, sign and announce.
-            if let Some(finality_signature) = self
+            if let Some(fin_sig) = self
                 .validator_matrix
                 .create_finality_signature(block.header())
             {
+                let finality_signature = Arc::new(fin_sig);
                 effects.extend(reactor::wrap_effects(
                     MainEvent::BlockAccumulator,
                     self.block_accumulator.handle_event(
                         effect_builder,
                         rng,
                         block_accumulator::Event::CreatedFinalitySignature {
-                            finality_signature: Box::new(finality_signature.clone()),
+                            finality_signature: finality_signature.clone(),
                         },
                     ),
                 ));
 
                 let era_id = finality_signature.era_id;
-                let payload = Message::FinalitySignature(Arc::new(finality_signature));
+                let payload = Message::FinalitySignature(finality_signature);
                 effects.extend(reactor::wrap_effects(
                     MainEvent::Network,
                     effect_builder

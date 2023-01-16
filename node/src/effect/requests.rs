@@ -457,7 +457,7 @@ pub(crate) enum StorageRequest {
         responder: Responder<bool>,
     },
     PutFinalitySignature {
-        signature: Box<FinalitySignature>,
+        signature: Arc<FinalitySignature>,
         responder: Responder<bool>,
     },
     /// Store a block header.

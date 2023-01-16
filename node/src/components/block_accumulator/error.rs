@@ -4,7 +4,7 @@ use casper_types::{crypto, EraId};
 
 use crate::types::{BlockHash, BlockValidationError, MetaBlockMergeError, NodeId};
 
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub(crate) enum InvalidGossipError {
     #[error("received cryptographically invalid block for: {block_hash} from: {peer} with error: {validation_error}")]
     Block {
@@ -29,7 +29,7 @@ impl InvalidGossipError {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Clone, Copy, Error, Debug)]
 pub(crate) enum Bogusness {
     #[error("peer is not a validator in current era")]
     NotAValidator,
@@ -37,7 +37,7 @@ pub(crate) enum Bogusness {
     SignatureEraIdMismatch,
 }
 
-#[derive(Error, Debug)]
+#[derive(Clone, Error, Debug)]
 pub(crate) enum Error {
     #[error(transparent)]
     InvalidGossip(Box<InvalidGossipError>),

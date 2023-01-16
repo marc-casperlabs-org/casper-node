@@ -1070,7 +1070,7 @@ impl Storage {
                     .unwrap_or_else(|| {
                         BlockSignatures::new(signature.block_hash, signature.era_id)
                     });
-                block_signatures.insert_proof(signature.public_key, signature.signature);
+                block_signatures.insert_proof(signature.public_key.clone(), signature.signature);
                 let outcome = txn.put_value(
                     self.block_metadata_db,
                     &block_signatures.block_hash,

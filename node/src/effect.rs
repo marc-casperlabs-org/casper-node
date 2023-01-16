@@ -1253,14 +1253,14 @@ impl<REv> EffectBuilder<REv> {
 
     pub(crate) async fn put_finality_signature_to_storage(
         self,
-        signature: FinalitySignature,
+        signature: Arc<FinalitySignature>,
     ) -> bool
     where
         REv: From<StorageRequest>,
     {
         self.make_request(
             |responder| StorageRequest::PutFinalitySignature {
-                signature: Box::new(signature),
+                signature,
                 responder,
             },
             QueueKind::ToStorage,

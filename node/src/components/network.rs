@@ -1211,7 +1211,7 @@ where
                             let requests = self.outgoing_manager.block_addr(
                                 addr,
                                 Instant::now(),
-                                *justification,
+                                (*justification).clone(),
                             );
                             self.process_dial_requests(requests)
                         } else {
