@@ -5,7 +5,9 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    iter::{self, Rev},
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
+    ops::Range,
     sync::Arc,
 };
 
@@ -16,7 +18,7 @@ use casper_hashing::Digest;
 use casper_types::{
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
     AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, TimeDiff,
-    Timestamp, DEPLOY_HASH_LENGTH,
+    Timestamp, DEPLOY_HASH_LENGTH, U512,
 };
 use either::Either;
 use serde::Serialize;
@@ -66,14 +68,17 @@ pub(crate) trait LargestSpecimen {
 }
 
 /// Supports generating a unique sequence of specimen that are as large as possible.
-pub(crate) trait LargeUniqueSequence {
-    /// The generator returned.
-    type Generator: Iterator<Item = Self>;
-
-    /// Create a new generator of the largest possible unique specimen sequence.
+pub(crate) trait LargeUniqueSequence<E>
+where
+    Self: Sized + Ord,
+    E: SizeEstimator,
+{
+    /// Create a new sequence of the largest possible unique specimens.
     ///
     /// Note that multiple calls to this function will return overlapping sequences.
-    fn large_unique_sequence() -> Self::Generator;
+    // Note: This functions returns a materialized sequence instead of a generator to avoid
+    //       complications with borrowing `E`.
+    fn large_unique_sequence(estimator: &E, count: usize) -> BTreeSet<Self>;
 }
 
 /// Produces the largest variant of a specific `enum` using an estimator and a generation function.
@@ -121,33 +126,6 @@ pub(crate) fn vec_prop_specimen<T: LargestSpecimen, E: SizeEstimator>(
     vec_of_largest_speciment(estimator, count as usize)
 }
 
-/// Generates a `BTreeMap` with distinct keys taken from a sequence and max size values.
-pub(crate) fn btree_map_distinct_keys<K, I, V, E>(
-    estimator: &E,
-    keys: I,
-    count: usize,
-) -> BTreeMap<K, V>
-where
-    V: LargestSpecimen,
-    I: Iterator<Item = K>,
-    K: Ord,
-    E: SizeEstimator,
-{
-    let mut map: BTreeMap<K, V> = BTreeMap::new();
-    for key in keys {
-        map.insert(key, LargestSpecimen::largest_specimen(estimator))
-            .expect("duplicate item inserting into distinct keys map");
-    }
-
-    assert_eq!(
-        map.len(),
-        count,
-        "distinct keys map must have expected size"
-    );
-
-    map
-}
-
 /// Generates a `BTreeMap` with the size taken from a property.
 ///
 /// Keys are generated uniquely using `LargeUniqueSequence`, while values will be largest specimen.
@@ -157,7 +135,7 @@ pub(crate) fn btree_map_distinct_from_prop<K, V, E>(
 ) -> BTreeMap<K, V>
 where
     V: LargestSpecimen,
-    K: Ord + LargeUniqueSequence,
+    K: Ord + LargeUniqueSequence<E> + Sized,
     E: SizeEstimator,
 {
     let mut count = estimator.require_parameter(parameter_name);
@@ -165,9 +143,10 @@ where
         count = 0;
     }
 
-    let keys = K::large_unique_sequence();
-
-    btree_map_distinct_keys(estimator, keys, count as usize)
+    K::large_unique_sequence(estimator, count as usize)
+        .into_iter()
+        .map(|key| (key, LargestSpecimen::largest_specimen(estimator)))
+        .collect()
 }
 
 /// Generates a `BTreeSet` with the size taken from a property.
@@ -178,7 +157,7 @@ pub(crate) fn btree_set_distinct_from_prop<T, E>(
     parameter_name: &'static str,
 ) -> BTreeSet<T>
 where
-    T: Ord + LargeUniqueSequence,
+    T: Ord + LargeUniqueSequence<E> + Sized,
     E: SizeEstimator,
 {
     let mut count = estimator.require_parameter(parameter_name);
@@ -186,7 +165,7 @@ where
         count = 0;
     }
 
-    T::large_unique_sequence().take(count as usize).collect()
+    T::large_unique_sequence(estimator, count as usize)
 }
 
 impl LargestSpecimen for SocketAddr {
@@ -338,13 +317,41 @@ impl LargestSpecimen for SemVer {
 
 impl LargestSpecimen for PublicKey {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        largest_variant::<Self, PublicKeyDiscriminants, _, _>(estimator, |variant| match variant {
-            PublicKeyDiscriminants::System => PublicKey::system(),
-            PublicKeyDiscriminants::Ed25519 => PublicKey::ed25519_from_bytes(&[0xFFu8, 32])
-                .expect("fixed specimen should be valid Ed25519 public key"),
-            PublicKeyDiscriminants::Secp256k1 => PublicKey::secp256k1_from_bytes(&[0xFFu8, 32])
-                .expect("fixed specimen should be valid Secp256k1 public key"),
-        })
+        public_key_from_key_bytes(estimator, [0xFFu8; 32])
+    }
+}
+
+fn key_bytes_from_random_value(seed: u128) -> [u8; 32] {
+    let bytes = seed.to_ne_bytes();
+    [
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8],
+        bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15], bytes[0],
+        bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
+    ]
+}
+
+fn public_key_from_key_bytes<E: SizeEstimator>(estimator: &E, pub_key: [u8; 32]) -> PublicKey {
+    largest_variant::<PublicKey, PublicKeyDiscriminants, _, _>(estimator, |variant| match variant {
+        PublicKeyDiscriminants::System => PublicKey::system(),
+        PublicKeyDiscriminants::Ed25519 => PublicKey::ed25519_from_bytes(&pub_key)
+            .expect("fixed specimen should be valid Ed25519 public key"),
+        PublicKeyDiscriminants::Secp256k1 => PublicKey::secp256k1_from_bytes(&pub_key)
+            .expect("fixed specimen should be valid Secp256k1 public key"),
+    })
+}
+
+impl<E> LargeUniqueSequence<E> for PublicKey
+where
+    E: SizeEstimator,
+{
+    fn large_unique_sequence(estimator: &E, count: usize) -> BTreeSet<Self> {
+        (0..u128::MAX)
+            .rev()
+            .map(key_bytes_from_random_value)
+            .map(|bytes| public_key_from_key_bytes(estimator, bytes))
+            .take(count)
+            .collect()
     }
 }
 
@@ -385,7 +392,7 @@ impl LargestSpecimen for Block {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            todo!("era validator weights"),
+            Some(btree_map_distinct_from_prop(estimator, "validator_count")),
             LargestSpecimen::largest_specimen(estimator),
         )
         .expect("did not expect largest speciment creation of block to fail")
@@ -571,5 +578,11 @@ impl LargestSpecimen for ExecutableDeployItem {
                 }
             }
         })
+    }
+}
+
+impl LargestSpecimen for U512 {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        U512::max_value()
     }
 }

@@ -2249,7 +2249,7 @@ where
 
 #[cfg(test)]
 mod specimen_support {
-    use std::{iter, ops};
+    use std::collections::BTreeSet;
 
     use crate::{
         components::consensus::{utils::ValidatorIndex, ClContext},
@@ -2311,11 +2311,14 @@ mod specimen_support {
         }
     }
 
-    impl LargeUniqueSequence for ValidatorIndex {
-        type Generator = iter::Map<iter::Rev<ops::Range<u32>>, fn(u32) -> ValidatorIndex>;
-
-        fn large_unique_sequence() -> Self::Generator {
+    impl<E> LargeUniqueSequence<E> for ValidatorIndex
+    where
+        E: SizeEstimator,
+    {
+        fn large_unique_sequence(_estimator: &E, count: usize) -> BTreeSet<Self> {
             Iterator::map((0..u32::MAX).rev(), ValidatorIndex::from)
+                .take(count)
+                .collect()
         }
     }
 
