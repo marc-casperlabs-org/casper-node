@@ -49,7 +49,9 @@ pub(crate) trait SizeEstimator {
     ///
     /// Like `get_parameter`, but does not accept `None` as an answer.
     ///
-    /// ##
+    /// ## Panics
+    ///
+    /// If the named parameter is not set, panics.
     fn require_parameter(&self, name: &'static str) -> i64 {
         self.get_parameter(name)
             .unwrap_or_else(|| panic!("missing parameter \"{}\" for specimen estimation", name))
