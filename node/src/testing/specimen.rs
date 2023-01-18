@@ -168,6 +168,17 @@ where
     T::large_unique_sequence(estimator, count as usize)
 }
 
+/// Generates a `BTreeSet` with a given amount of items.
+///
+/// Value are generated uniquely using `LargeUniqueSequence`.
+pub(crate) fn btree_set_distinct<T, E>(estimator: &E, count: usize) -> BTreeSet<T>
+where
+    T: Ord + LargeUniqueSequence<E> + Sized,
+    E: SizeEstimator,
+{
+    T::large_unique_sequence(estimator, count as usize)
+}
+
 impl LargestSpecimen for SocketAddr {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         SocketAddr::V6(SocketAddrV6::largest_specimen(estimator))
@@ -449,12 +460,6 @@ impl LargestSpecimen for BlockHash {
     }
 }
 
-impl LargestSpecimen for BlockBody {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!()
-    }
-}
-
 // impls for `casper_hashing`, which is technically a foreign crate -- so we put them here.
 impl LargestSpecimen for Digest {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
@@ -476,9 +481,15 @@ impl LargestSpecimen for BlockPayload {
 
 impl LargestSpecimen for DeployHashWithApprovals {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        // Note: This is an upper bound, the actual value is lower. We are keeping the order of
+        //       magnitude intact though.
+        let max_items = estimator.require_parameter("max_deploys_per_block")
+            + estimator.require_parameter("max_transfers_per_block");
+        let approvals_per_deploy =
+            (estimator.require_parameter("max_approvals_per_block") + (max_items - 1)) / max_items;
         DeployHashWithApprovals::new(
             LargestSpecimen::largest_specimen(estimator),
-            todo!("how many approvals are there in this?"),
+            btree_set_distinct(estimator, max_items as usize),
         )
     }
 }
@@ -520,6 +531,19 @@ impl LargestSpecimen for Approval {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
         )
+    }
+}
+
+impl<E> LargeUniqueSequence<E> for Approval
+where
+    Self: Sized + Ord,
+    E: SizeEstimator,
+{
+    fn large_unique_sequence(estimator: &E, count: usize) -> BTreeSet<Self> {
+        PublicKey::large_unique_sequence(estimator, count)
+            .into_iter()
+            .map(|pk| Approval::from_parts(pk, LargestSpecimen::largest_specimen(estimator)))
+            .collect()
     }
 }
 
