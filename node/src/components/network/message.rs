@@ -420,6 +420,8 @@ pub struct EstimatorWeights {
 
 #[cfg(test)]
 mod specimen_support {
+    use std::iter;
+
     use serde::Serialize;
 
     use crate::testing::specimen::{
@@ -438,21 +440,16 @@ mod specimen_support {
             largest_variant::<Self, MessageDiscriminants, _, _>(
                 estimator,
                 |variant| match variant {
-                    MessageDiscriminants::Handshake => {
-                        let mut network_name = String::new();
-                        for _ in 0..largest_network_name {
-                            network_name.push(HIGHEST_UNICODE_CODEPOINT);
-                        }
-
-                        Message::Handshake {
-                            network_name: String::new(),
-                            public_addr: LargestSpecimen::largest_specimen(estimator),
-                            protocol_version: LargestSpecimen::largest_specimen(estimator),
-                            consensus_certificate: LargestSpecimen::largest_specimen(estimator),
-                            is_syncing: LargestSpecimen::largest_specimen(estimator),
-                            chainspec_hash: LargestSpecimen::largest_specimen(estimator),
-                        }
-                    }
+                    MessageDiscriminants::Handshake => Message::Handshake {
+                        network_name: iter::repeat(HIGHEST_UNICODE_CODEPOINT)
+                            .take(largest_network_name)
+                            .collect(),
+                        public_addr: LargestSpecimen::largest_specimen(estimator),
+                        protocol_version: LargestSpecimen::largest_specimen(estimator),
+                        consensus_certificate: LargestSpecimen::largest_specimen(estimator),
+                        is_syncing: LargestSpecimen::largest_specimen(estimator),
+                        chainspec_hash: LargestSpecimen::largest_specimen(estimator),
+                    },
                     MessageDiscriminants::Ping => Message::Ping {
                         nonce: LargestSpecimen::largest_specimen(estimator),
                     },
