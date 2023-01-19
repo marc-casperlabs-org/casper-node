@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display, Formatter},
+    sync::Arc,
 };
 
 use datasize::DataSize;
@@ -240,11 +241,11 @@ impl ExecutionResultsAcquisition {
 
     pub(super) fn apply_block_execution_results_or_chunk(
         self,
-        block_execution_results_or_chunk: BlockExecutionResultsOrChunk,
+        block_execution_results_or_chunk: Arc<BlockExecutionResultsOrChunk>,
         deploy_hashes: Vec<DeployHash>,
     ) -> Result<Self, Error> {
         let block_hash = *block_execution_results_or_chunk.block_hash();
-        let value = block_execution_results_or_chunk.into_value();
+        let value = block_execution_results_or_chunk.value();
 
         let expected_block_hash = self.block_hash();
         if expected_block_hash != block_hash {
@@ -262,11 +263,11 @@ impl ExecutionResultsAcquisition {
             | (
                 ExecutionResultsAcquisition::Acquiring { checksum, .. },
                 ValueOrChunk::Value(execution_results),
-            ) => (checksum, execution_results),
+            ) => (checksum, execution_results.clone()),
             (
                 ExecutionResultsAcquisition::Pending { checksum, .. },
                 ValueOrChunk::ChunkWithProof(chunk),
-            ) => match apply_chunk(block_hash, checksum, HashMap::new(), chunk, None) {
+            ) => match apply_chunk(block_hash, checksum, HashMap::new(), chunk.clone(), None) {
                 Ok(ApplyChunkOutcome::NeedNext {
                     chunks,
                     chunk_count,
@@ -295,7 +296,13 @@ impl ExecutionResultsAcquisition {
                     ..
                 },
                 ValueOrChunk::ChunkWithProof(chunk),
-            ) => match apply_chunk(block_hash, checksum, chunks, chunk, Some(chunk_count)) {
+            ) => match apply_chunk(
+                block_hash,
+                checksum,
+                chunks,
+                chunk.clone(),
+                Some(chunk_count),
+            ) {
                 Ok(ApplyChunkOutcome::NeedNext {
                     chunks,
                     chunk_count,

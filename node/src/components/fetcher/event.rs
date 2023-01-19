@@ -25,7 +25,7 @@ pub(crate) enum Event<T: FetcherItem> {
         id: T::Id,
         peer: NodeId,
         validation_metadata: T::ValidationMetadata,
-        maybe_item: Box<Option<T>>,
+        maybe_item: Option<Box<T>>,
         responder: FetchResponder<T>,
     },
     /// An announcement from a different component that we have accepted and stored the given item.

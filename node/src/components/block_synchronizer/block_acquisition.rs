@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
+    sync::Arc,
 };
 
 use datasize::DataSize;
@@ -67,8 +68,8 @@ use crate::{
 #[derive(Clone, DataSize, Debug)]
 pub(super) enum BlockAcquisitionState {
     Initialized(BlockHash, SignatureAcquisition),
-    HaveBlockHeader(Box<BlockHeader>, SignatureAcquisition),
-    HaveWeakFinalitySignatures(Box<BlockHeader>, SignatureAcquisition),
+    HaveBlockHeader(Arc<BlockHeader>, SignatureAcquisition),
+    HaveWeakFinalitySignatures(Arc<BlockHeader>, SignatureAcquisition),
     HaveBlock(Box<Block>, SignatureAcquisition, DeployAcquisition),
     HaveGlobalState(
         Box<Block>,
@@ -385,13 +386,13 @@ impl BlockAcquisitionState {
     /// Register the block header for this block.
     pub(super) fn register_block_header(
         &mut self,
-        header: BlockHeader,
+        header: Arc<BlockHeader>,
     ) -> Result<Option<Acceptance>, BlockAcquisitionError> {
         let new_state = match self {
             BlockAcquisitionState::Initialized(block_hash, signatures) => {
                 if header.id() == *block_hash {
                     info!("BlockAcquisition: registering header for: {}", block_hash);
-                    BlockAcquisitionState::HaveBlockHeader(Box::new(header), signatures.clone())
+                    BlockAcquisitionState::HaveBlockHeader(header, signatures.clone())
                 } else {
                     return Err(BlockAcquisitionError::BlockHashMismatch {
                         expected: *block_hash,
@@ -464,7 +465,7 @@ impl BlockAcquisitionState {
     /// Register a finality signature for this block.
     pub(super) fn register_finality_signature(
         &mut self,
-        signature: FinalitySignature,
+        signature: Arc<FinalitySignature>,
         validator_weights: &EraValidatorWeights,
     ) -> Result<Option<Acceptance>, BlockAcquisitionError> {
         // we will accept finality signatures we don't yet have while in every state other than
@@ -670,7 +671,7 @@ impl BlockAcquisitionState {
     /// Register execution results or chunk for this block.
     pub(super) fn register_execution_results_or_chunk(
         &mut self,
-        block_execution_results_or_chunk: BlockExecutionResultsOrChunk,
+        block_execution_results_or_chunk: Arc<BlockExecutionResultsOrChunk>,
         need_execution_state: bool,
     ) -> Result<Option<HashMap<DeployHash, casper_types::ExecutionResult>>, BlockAcquisitionError>
     {

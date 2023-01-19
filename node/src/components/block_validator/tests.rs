@@ -74,7 +74,7 @@ impl MockReactor {
                 Some(deploy) => {
                     assert_eq!(id, deploy.inner().hash().clone());
                     let response = FetchedData::FromPeer {
-                        item: Box::new(deploy),
+                        item: Arc::new(deploy),
                         peer,
                     };
                     responder.respond(Ok(response)).await;

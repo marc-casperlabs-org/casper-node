@@ -412,7 +412,7 @@ where
             .await
         {
             Ok(FetchedData::FromStorage { item }) | Ok(FetchedData::FromPeer { item, .. }) => {
-                Deploy::from(*item)
+                Deploy::from((*item).clone())
             }
             Err(fetcher_error) => {
                 warn!(

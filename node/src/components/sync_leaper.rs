@@ -36,7 +36,7 @@ enum PeerState {
     RequestSent,
     Rejected,
     CouldntFetch,
-    Fetched(Box<SyncLeap>),
+    Fetched(Arc<SyncLeap>),
 }
 
 #[derive(Debug, DataSize)]
@@ -47,7 +47,7 @@ pub(crate) enum LeapState {
         in_flight: usize,
     },
     Received {
-        best_available: Box<SyncLeap>,
+        best_available: Arc<SyncLeap>,
         from_peers: Vec<NodeId>,
         in_flight: usize,
     },
@@ -153,7 +153,7 @@ impl LeapActivity {
         match self.best_response() {
             Ok((best_available, from_peers)) => LeapState::Received {
                 in_flight,
-                best_available: Box::new(best_available),
+                best_available,
                 from_peers,
             },
             // `Unobtainable` means we couldn't download it from any peer so far - don't treat it
@@ -171,7 +171,7 @@ impl LeapActivity {
         }
     }
 
-    fn best_response(&self) -> Result<(SyncLeap, Vec<NodeId>), LeapActivityError> {
+    fn best_response(&self) -> Result<(Arc<SyncLeap>, Vec<NodeId>), LeapActivityError> {
         let reject_count = self
             .peers
             .values()
@@ -179,21 +179,21 @@ impl LeapActivity {
             .count();
 
         let mut peers = vec![];
-        let mut maybe_ret: Option<&Box<SyncLeap>> = None;
+        let mut maybe_ret: Option<Arc<SyncLeap>> = None;
         for (peer, peer_state) in &self.peers {
             match peer_state {
-                PeerState::Fetched(sync_leap) => match &maybe_ret {
+                PeerState::Fetched(sync_leap) => match maybe_ret {
                     None => {
-                        maybe_ret = Some(sync_leap);
+                        maybe_ret = Some(sync_leap.clone());
                         peers.push(*peer);
                     }
-                    Some(current_ret) => {
+                    Some(ref current_ret) => {
                         match current_ret
                             .highest_block_height()
                             .cmp(&sync_leap.highest_block_height())
                         {
                             Ordering::Less => {
-                                maybe_ret = Some(sync_leap);
+                                maybe_ret = Some(sync_leap.clone());
                                 peers = vec![*peer];
                             }
                             Ordering::Equal => {
@@ -208,7 +208,7 @@ impl LeapActivity {
         }
 
         match maybe_ret {
-            Some(sync_leap) => Ok((*sync_leap.clone(), peers)),
+            Some(sync_leap) => Ok((sync_leap, peers)),
             None => {
                 if reject_count > 0 {
                     Err(LeapActivityError::TooOld(self.sync_leap_identifier, peers))
@@ -372,7 +372,7 @@ impl SyncLeaper {
                         return;
                     }
                 };
-                *peer_state = PeerState::Fetched(Box::new(*item));
+                *peer_state = PeerState::Fetched(item.clone());
                 self.metrics.sync_leap_fetched_from_peer.inc();
             }
             Err(fetcher::Error::Rejected { peer, .. }) => {

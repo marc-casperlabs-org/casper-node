@@ -12,6 +12,7 @@ use std::{
     error::Error as StdError,
     fmt::{self, Debug, Display, Formatter},
     hash::{Hash, Hasher},
+    sync::Arc,
 };
 
 use datasize::DataSize;
@@ -1250,9 +1251,14 @@ impl BlockSignatures {
         })
     }
 
-    pub(crate) fn finality_signatures(&self) -> impl Iterator<Item = FinalitySignature> + '_ {
+    pub(crate) fn finality_signatures(&self) -> impl Iterator<Item = Arc<FinalitySignature>> + '_ {
         self.proofs.iter().map(move |(public_key, signature)| {
-            FinalitySignature::new(self.block_hash, self.era_id, *signature, public_key.clone())
+            Arc::new(FinalitySignature::new(
+                self.block_hash,
+                self.era_id,
+                *signature,
+                public_key.clone(),
+            ))
         })
     }
 
@@ -1715,9 +1721,9 @@ impl BlockExecutionResultsOrChunk {
             .clone()
     }
 
-    /// Consumes `self` and returns inner `ValueOrChunk` field.
-    pub fn into_value(self) -> ValueOrChunk<Vec<casper_types::ExecutionResult>> {
-        self.value
+    /// Returns a reference to the inner `ValueOrChunk` field.
+    pub fn value(&self) -> &ValueOrChunk<Vec<casper_types::ExecutionResult>> {
+        &self.value
     }
 
     /// Returns the hash of the block this execution result belongs to.

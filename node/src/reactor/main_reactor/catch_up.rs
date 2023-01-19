@@ -1,5 +1,5 @@
 use either::Either;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, warn};
 
 use casper_types::{TimeDiff, Timestamp};
@@ -329,7 +329,7 @@ impl MainReactor {
     fn catch_up_leap_received(
         &mut self,
         effect_builder: EffectBuilder<MainEvent>,
-        best_available: Box<SyncLeap>,
+        best_available: Arc<SyncLeap>,
         from_peers: Vec<NodeId>,
     ) -> CatchUpInstruction {
         let block_hash = best_available.highest_block_hash();

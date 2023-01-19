@@ -59,7 +59,7 @@ pub(super) trait ItemFetcher<T: FetcherItem + 'static> {
                 id,
                 peer,
                 validation_metadata,
-                maybe_item: Box::new(result),
+                maybe_item: result.map(Box::new),
                 responder,
             }
         })
@@ -162,7 +162,7 @@ pub(super) trait ItemFetcher<T: FetcherItem + 'static> {
                 .ignore()
         } else {
             match Self::put_to_storage(effect_builder, (*item).clone()) {
-                StoringState::WontStore(item) => self.signal(item.id(), Ok(item), peer),
+                StoringState::WontStore(item) => self.signal(item.id(), Ok(Arc::new(item)), peer),
                 StoringState::Enqueued(store_future) => {
                     store_future.event(move |_| Event::PutToStorage { item, peer })
                 }
@@ -186,7 +186,7 @@ pub(super) trait ItemFetcher<T: FetcherItem + 'static> {
     fn send_response_from_peer(
         &mut self,
         id: T::Id,
-        result: Result<T, Error<T>>,
+        result: Result<Arc<T>, Error<T>>,
         peer: NodeId,
     ) -> Effects<Event<T>> {
         let mut effects = Effects::new();
@@ -262,7 +262,7 @@ pub(super) trait ItemFetcher<T: FetcherItem + 'static> {
     fn signal(
         &mut self,
         id: T::Id,
-        result: Result<T, Error<T>>,
+        result: Result<Arc<T>, Error<T>>,
         peer: NodeId,
     ) -> Effects<Event<T>> {
         match result {

@@ -1,6 +1,7 @@
 use either::Either;
 use std::{
     fmt::{Display, Formatter},
+    sync::Arc,
     time::Duration,
 };
 use tracing::{debug, error, info, warn};
@@ -357,7 +358,7 @@ impl MainReactor {
         KeepUpInstruction::Do(offset, effects)
     }
 
-    fn sync_back_leap_received(&mut self, best_available: Box<SyncLeap>) -> KeepUpInstruction {
+    fn sync_back_leap_received(&mut self, best_available: Arc<SyncLeap>) -> KeepUpInstruction {
         // use the leap response to update our recent switch block data (if relevant) and
         // era validator weights. if there are other processes which are holding on discovery
         // of relevant newly-seen era validator weights, they should naturally progress

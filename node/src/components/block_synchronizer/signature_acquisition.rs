@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use datasize::DataSize;
 
@@ -8,7 +8,7 @@ use casper_types::PublicKey;
 #[derive(Clone, PartialEq, Eq, DataSize, Debug)]
 enum SignatureState {
     Vacant,
-    Signature(Box<FinalitySignature>),
+    Signature(Arc<FinalitySignature>),
 }
 
 #[derive(Clone, PartialEq, Eq, DataSize, Debug)]
@@ -31,11 +31,11 @@ impl SignatureAcquisition {
     }
 
     // Returns `true` if new signature was registered.
-    pub(super) fn apply_signature(&mut self, finality_signature: FinalitySignature) -> bool {
+    pub(super) fn apply_signature(&mut self, finality_signature: Arc<FinalitySignature>) -> bool {
         self.inner
             .insert(
                 finality_signature.public_key.clone(),
-                SignatureState::Signature(Box::new(finality_signature)),
+                SignatureState::Signature(finality_signature),
             )
             .is_none()
     }

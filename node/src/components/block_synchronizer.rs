@@ -679,7 +679,7 @@ impl BlockSynchronizer {
     ) {
         let (block_hash, maybe_block_header, maybe_peer_id): (
             BlockHash,
-            Option<Box<BlockHeader>>,
+            Option<Arc<BlockHeader>>,
             Option<NodeId>,
         ) = match result {
             Ok(FetchedData::FromPeer { item, peer }) => (item.id(), Some(item), Some(peer)),
@@ -702,7 +702,7 @@ impl BlockSynchronizer {
                     }
                     Some(block_header) => {
                         if let Err(error) =
-                            builder.register_block_header(*block_header, maybe_peer_id)
+                            builder.register_block_header(block_header, maybe_peer_id)
                         {
                             error!(%error, "BlockSynchronizer: failed to apply block header");
                         } else {
@@ -720,7 +720,7 @@ impl BlockSynchronizer {
     fn block_fetched(&mut self, result: Result<FetchedData<Block>, FetcherError<Block>>) {
         let (block_hash, maybe_block, maybe_peer_id): (
             BlockHash,
-            Option<Box<Block>>,
+            Option<Arc<Block>>,
             Option<NodeId>,
         ) = match result {
             Ok(FetchedData::FromPeer { item, peer }) => {
@@ -767,7 +767,7 @@ impl BlockSynchronizer {
     ) {
         let (block_hash, maybe_approvals_hashes, maybe_peer_id): (
             BlockHash,
-            Option<Box<ApprovalsHashes>>,
+            Option<Arc<ApprovalsHashes>>,
             Option<NodeId>,
         ) = match result {
             Ok(FetchedData::FromPeer { item, peer }) => {
@@ -843,7 +843,7 @@ impl BlockSynchronizer {
                     }
                     Some(finality_signature) => {
                         if let Err(error) =
-                            builder.register_finality_signature(*finality_signature, maybe_peer)
+                            builder.register_finality_signature(finality_signature, maybe_peer)
                         {
                             warn!(%error, "BlockSynchronizer: failed to apply finality signature");
                         }
@@ -960,7 +960,7 @@ impl BlockSynchronizer {
                     // to disk here, when the last chunk is collected.
                     // we expect a response back, which will crank the block builder for this block
                     // to the next state.
-                    match builder.register_fetched_execution_results(maybe_peer_id, *value_or_chunk)
+                    match builder.register_fetched_execution_results(maybe_peer_id, value_or_chunk)
                     {
                         Ok(Some(execution_results)) => {
                             return effect_builder

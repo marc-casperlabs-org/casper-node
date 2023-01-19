@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Formatter},
+    sync::Arc,
     time::Instant,
 };
 
@@ -119,7 +120,7 @@ impl BlockBuilder {
             }
         }
         let acquisition_state = BlockAcquisitionState::HaveWeakFinalitySignatures(
-            Box::new(block_header.clone()),
+            block_header.clone(),
             signature_acquisition,
         );
         let mut peer_list = PeerList::new(max_simultaneous_peers, peer_refresh_interval);
@@ -330,7 +331,7 @@ impl BlockBuilder {
 
     pub(super) fn register_block_header(
         &mut self,
-        block_header: BlockHeader,
+        block_header: Arc<BlockHeader>,
         maybe_peer: Option<NodeId>,
     ) -> Result<(), Error> {
         let era_id = block_header.era_id();
@@ -364,7 +365,7 @@ impl BlockBuilder {
 
     pub(super) fn register_finality_signature(
         &mut self,
-        finality_signature: FinalitySignature,
+        finality_signature: Arc<FinalitySignature>,
         maybe_peer: Option<NodeId>,
     ) -> Result<(), Error> {
         let validator_weights = self
@@ -405,7 +406,7 @@ impl BlockBuilder {
     pub(super) fn register_fetched_execution_results(
         &mut self,
         maybe_peer: Option<NodeId>,
-        block_execution_results_or_chunk: BlockExecutionResultsOrChunk,
+        block_execution_results_or_chunk: Arc<BlockExecutionResultsOrChunk>,
     ) -> Result<Option<HashMap<DeployHash, casper_types::ExecutionResult>>, Error> {
         match self.acquisition_state.register_execution_results_or_chunk(
             block_execution_results_or_chunk,

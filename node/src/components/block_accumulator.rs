@@ -521,7 +521,7 @@ impl BlockAccumulator {
             for finality_signature in block_signatures.finality_signatures() {
                 effects.extend(
                     effect_builder
-                        .announce_finality_signature_accepted(Arc::new(finality_signature))
+                        .announce_finality_signature_accepted(finality_signature)
                         .ignore(),
                 );
             }

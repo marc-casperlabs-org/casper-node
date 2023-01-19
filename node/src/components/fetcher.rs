@@ -100,11 +100,11 @@ where
                 validation_metadata,
                 maybe_item,
                 responder,
-            } => match *maybe_item {
+            } => match maybe_item {
                 Some(item) => {
                     self.metrics().found_in_storage.inc();
                     responder
-                        .respond(Ok(FetchedData::from_storage(item)))
+                        .respond(Ok(FetchedData::from_storage(item.into())))
                         .ignore()
                 }
                 None => self.failed_to_get_from_storage(
@@ -133,7 +133,7 @@ where
             Event::TimeoutPeer { id, peer } => {
                 self.signal(id.clone(), Err(Error::TimedOut { id, peer }), peer)
             }
-            Event::PutToStorage { item, peer } => self.signal(item.id(), Ok((*item).clone()), peer),
+            Event::PutToStorage { item, peer } => self.signal(item.id(), Ok(item), peer),
         }
     }
 

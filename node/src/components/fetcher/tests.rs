@@ -421,10 +421,10 @@ async fn store_deploy(
 enum ExpectedFetchedDeployResult {
     TimedOut,
     FromStorage {
-        expected_deploy: Box<Deploy>,
+        expected_deploy: Arc<Deploy>,
     },
     FromPeer {
-        expected_deploy: Box<Deploy>,
+        expected_deploy: Arc<Deploy>,
         expected_peer: NodeId,
     },
 }
@@ -517,7 +517,7 @@ async fn should_fetch_from_local() {
         .await;
 
     let expected_result = ExpectedFetchedDeployResult::FromStorage {
-        expected_deploy: Box::new(deploy),
+        expected_deploy: Arc::new(deploy),
     };
     assert_settled(
         &node_id,
@@ -565,7 +565,7 @@ async fn should_fetch_from_peer() {
         .await;
 
     let expected_result = ExpectedFetchedDeployResult::FromPeer {
-        expected_deploy: Box::new(deploy),
+        expected_deploy: Arc::new(deploy),
         expected_peer: node_with_deploy,
     };
     assert_settled(
