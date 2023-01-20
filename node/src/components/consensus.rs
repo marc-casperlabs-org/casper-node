@@ -418,7 +418,9 @@ mod specimen_support {
                     EraMessageDiscriminants::Zug => {
                         EraMessage::Zug(LargestSpecimen::largest_specimen(estimator))
                     }
-                    EraMessageDiscriminants::Highway => EraMessage::Highway(todo!()),
+                    EraMessageDiscriminants::Highway => {
+                        EraMessage::Highway(LargestSpecimen::largest_specimen(estimator))
+                    }
                 }
             })
         }

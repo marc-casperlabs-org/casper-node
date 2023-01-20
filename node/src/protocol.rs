@@ -250,8 +250,12 @@ mod specimen_support {
                     MessageDiscriminants::AddressGossiper => {
                         Message::AddressGossiper(LargestSpecimen::largest_specimen(estimator))
                     }
-                    MessageDiscriminants::GetRequest => todo!(),
-                    MessageDiscriminants::GetResponse => todo!(),
+                    MessageDiscriminants::GetRequest => {
+                        todo!("Félix GetRequest has a Vec<u8> (L55)")
+                    }
+                    MessageDiscriminants::GetResponse => {
+                        todo!("Félix GetResponse has a Arc<[u8]> (L62)")
+                    }
                     MessageDiscriminants::FinalitySignature => {
                         Message::FinalitySignature(LargestSpecimen::largest_specimen(estimator))
                     }

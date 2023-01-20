@@ -652,6 +652,8 @@ impl<C: Context + 'static> HighwayProtocol<C> {
     serialize = "C::Hash: Serialize",
     deserialize = "C::Hash: Deserialize<'de>",
 ))]
+#[cfg_attr(test, derive(strum::EnumDiscriminants))]
+#[cfg_attr(test, strum_discriminants(derive(strum::EnumIter)))]
 pub(crate) enum HighwayMessage<C>
 where
     C: Context,
@@ -665,6 +667,46 @@ where
         unit_seq_number: u64,
     },
     LatestStateRequest(IndexPanorama),
+}
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::{
+        components::consensus::ClContext,
+        testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
+    };
+
+    use super::{HighwayMessage, HighwayMessageDiscriminants};
+
+    impl LargestSpecimen for HighwayMessage<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            largest_variant::<Self, HighwayMessageDiscriminants, _, _>(estimator, |variant| {
+                match variant {
+                    HighwayMessageDiscriminants::NewVertex => {
+                        HighwayMessage::NewVertex(LargestSpecimen::largest_specimen(estimator))
+                    }
+                    HighwayMessageDiscriminants::RequestDependency => {
+                        HighwayMessage::RequestDependency(
+                            LargestSpecimen::largest_specimen(estimator),
+                            LargestSpecimen::largest_specimen(estimator),
+                        )
+                    }
+                    HighwayMessageDiscriminants::RequestDependencyByHeight => {
+                        HighwayMessage::RequestDependencyByHeight {
+                            uuid: LargestSpecimen::largest_specimen(estimator),
+                            vid: LargestSpecimen::largest_specimen(estimator),
+                            unit_seq_number: LargestSpecimen::largest_specimen(estimator),
+                        }
+                    }
+                    HighwayMessageDiscriminants::LatestStateRequest => {
+                        HighwayMessage::LatestStateRequest(todo!(
+                            "Félix ValidatorMap<IndexObservation>"
+                        ))
+                    }
+                }
+            })
+        }
+    }
 }
 
 impl<C: Context> HighwayMessage<C> {

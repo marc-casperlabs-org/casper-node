@@ -15,8 +15,9 @@ use casper_execution_engine::core::engine_state::{
 use casper_hashing::Digest;
 use casper_types::{
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
-    AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, TimeDiff,
-    Timestamp, DEPLOY_HASH_LENGTH, U512,
+    AsymmetricType, ContractHash, ContractPackageHash, DeployHash, EraId, ProtocolVersion,
+    RuntimeArgs, SemVer, SignatureDiscriminants, TimeDiff, Timestamp, DEPLOY_HASH_LENGTH,
+    KEY_HASH_LENGTH, U512,
 };
 use either::Either;
 use serde::Serialize;
@@ -208,6 +209,12 @@ impl LargestSpecimen for Ipv6Addr {
 impl LargestSpecimen for bool {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         true
+    }
+}
+
+impl LargestSpecimen for u8 {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        u8::MAX
     }
 }
 
@@ -566,37 +573,37 @@ impl LargestSpecimen for ExecutableDeployItem {
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByHash => {
                     ExecutableDeployItem::StoredContractByHash {
-                        hash: todo!(),
+                        hash: LargestSpecimen::largest_specimen(estimator),
                         entry_point: todo!("whats the maximum length for an entry point?"),
-                        args: todo!(),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByName => {
                     ExecutableDeployItem::StoredContractByName {
                         name: todo!("what's the max length for a contract stored by name?"),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        entry_point: todo!("what's the max length for an entry point?"),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredVersionedContractByHash => {
                     ExecutableDeployItem::StoredVersionedContractByHash {
-                        hash: todo!(),
-                        version: todo!(),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        hash: LargestSpecimen::largest_specimen(estimator),
+                        version: LargestSpecimen::largest_specimen(estimator),
+                        entry_point: todo!("what's the max length for an entry point?"),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredVersionedContractByName => {
                     ExecutableDeployItem::StoredVersionedContractByName {
-                        name: todo!(),
-                        version: todo!(),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        name: todo!("what's the max length for a contract stored by name?"),
+                        version: LargestSpecimen::largest_specimen(estimator),
+                        entry_point: todo!("what's the max length for an entry point?"),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
-                ExecutableDeployItemDiscriminants::Transfer => {
-                    ExecutableDeployItem::Transfer { args: todo!() }
-                }
+                ExecutableDeployItemDiscriminants::Transfer => ExecutableDeployItem::Transfer {
+                    args: LargestSpecimen::largest_specimen(estimator),
+                },
             }
         })
     }
@@ -605,5 +612,24 @@ impl LargestSpecimen for ExecutableDeployItem {
 impl LargestSpecimen for U512 {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         U512::max_value()
+    }
+}
+
+impl LargestSpecimen for ContractHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        ContractHash::new([LargestSpecimen::largest_specimen(estimator); KEY_HASH_LENGTH])
+    }
+}
+
+impl LargestSpecimen for ContractPackageHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        ContractPackageHash::new([LargestSpecimen::largest_specimen(estimator); KEY_HASH_LENGTH])
+    }
+}
+
+impl LargestSpecimen for RuntimeArgs {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!("Cannot init the type directly")
+        //RuntimeArgs(todo!("Félix Vec<NamedArg>"))
     }
 }

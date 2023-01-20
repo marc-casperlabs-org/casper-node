@@ -2356,7 +2356,7 @@ mod specimen_support {
 
     impl LargestSpecimen for SignedMessage<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-            let secret = todo!();
+            let secret = todo!("Félix Context::ValidatorSecret");
             SignedMessage::sign_new(
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
