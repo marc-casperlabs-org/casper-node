@@ -9,15 +9,18 @@ use std::{
     sync::Arc,
 };
 
-use casper_execution_engine::core::engine_state::{
-    executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
+use casper_execution_engine::{
+    core::engine_state::{
+        executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
+    },
+    storage::trie::TrieRaw,
 };
 use casper_hashing::Digest;
 use casper_types::{
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
     AsymmetricType, ContractHash, ContractPackageHash, DeployHash, EraId, ProtocolVersion,
-    RuntimeArgs, SemVer, SignatureDiscriminants, TimeDiff, Timestamp, DEPLOY_HASH_LENGTH,
-    KEY_HASH_LENGTH, U512,
+    RuntimeArgs, SecretKey, SemVer, SignatureDiscriminants, TimeDiff, Timestamp,
+    DEPLOY_HASH_LENGTH, KEY_HASH_LENGTH, U512,
 };
 use either::Either;
 use serde::Serialize;
@@ -25,9 +28,11 @@ use strum::IntoEnumIterator;
 
 use crate::{
     components::consensus::EraReport,
+    protocol::Message,
     types::{
-        Approval, ApprovalsHash, Block, BlockBody, BlockHash, BlockPayload, Deploy,
-        DeployHashWithApprovals, DeployId, FinalitySignature, FinalitySignatureId, FinalizedBlock,
+        Approval, ApprovalsHash, ApprovalsHashes, Block, BlockExecutionResultsOrChunk, BlockHash,
+        BlockHeader, BlockPayload, Deploy, DeployHashWithApprovals, DeployId, FinalitySignature,
+        FinalitySignatureId, FinalizedBlock, LegacyDeploy, SyncLeap, Tag, TrieOrChunk,
     },
 };
 
@@ -177,7 +182,7 @@ where
     T: Ord + LargeUniqueSequence<E> + Sized,
     E: SizeEstimator,
 {
-    T::large_unique_sequence(estimator, count as usize)
+    T::large_unique_sequence(estimator, count)
 }
 
 impl LargestSpecimen for SocketAddr {
@@ -532,6 +537,24 @@ impl LargestSpecimen for DeployId {
     }
 }
 
+impl LargestSpecimen for SyncLeap {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!()
+    }
+}
+
+impl LargestSpecimen for ApprovalsHashes {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!()
+    }
+}
+
+impl LargestSpecimen for BlockExecutionResultsOrChunk {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!()
+    }
+}
+
 impl LargestSpecimen for Approval {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         Approval::from_parts(
@@ -632,4 +655,104 @@ impl LargestSpecimen for RuntimeArgs {
         todo!("Cannot init the type directly")
         //RuntimeArgs(todo!("Félix Vec<NamedArg>"))
     }
+}
+
+impl LargestSpecimen for SecretKey {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        #[derive(strum::EnumIter)]
+        enum SecretKeyDiscriminants {
+            System,
+            Ed25519,
+            Secp256k1h,
+        }
+
+        todo!("SecretKey does not implement Serialize")
+        //largest_variant::<Self, SecretKeyDiscriminants, _, _>(estimator, |variant| match variant {
+        //    SecretKeyDiscriminants::System => SecretKey::System,
+        //    SecretKeyDiscriminants::Ed25519 => {
+        //        SecretKey::Ed25519(todo!())
+        //    }
+        //    SecretKeyDiscriminants::Secp256k1 => {
+        //        SecretKey::Secp256k1(todo!())
+        //    }
+        //})
+    }
+}
+
+impl LargestSpecimen for TrieRaw {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        todo!()
+    }
+}
+
+pub(crate) fn largest_get_request<E: SizeEstimator>(estimator: &E) -> Message {
+    largest_variant::<Message, Tag, _, _>(estimator, |variant| {
+        match variant {
+            Tag::Deploy => {
+                Message::new_get_request::<Deploy>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::LegacyDeploy => Message::new_get_request::<LegacyDeploy>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::Block => {
+                Message::new_get_request::<Block>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::BlockHeader => Message::new_get_request::<BlockHeader>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::TrieOrChunk => Message::new_get_request::<TrieOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::FinalitySignature => Message::new_get_request::<FinalitySignature>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::SyncLeap => {
+                Message::new_get_request::<SyncLeap>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::ApprovalsHashes => Message::new_get_request::<ApprovalsHashes>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::BlockExecutionResults => Message::new_get_request::<BlockExecutionResultsOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+        }
+        .expect("did not expect new_get_request from largest deploy to fail")
+    })
+}
+
+pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
+    largest_variant::<Message, Tag, _, _>(estimator, |variant| {
+        match variant {
+            Tag::Deploy => {
+                Message::new_get_response::<Deploy>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::LegacyDeploy => Message::new_get_response::<LegacyDeploy>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::Block => {
+                Message::new_get_response::<Block>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::BlockHeader => Message::new_get_response::<BlockHeader>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::TrieOrChunk => Message::new_get_response::<TrieOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::FinalitySignature => Message::new_get_response::<FinalitySignature>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::SyncLeap => {
+                Message::new_get_response::<SyncLeap>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::ApprovalsHashes => Message::new_get_response::<ApprovalsHashes>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::BlockExecutionResults => {
+                Message::new_get_response::<BlockExecutionResultsOrChunk>(
+                    &LargestSpecimen::largest_specimen(estimator),
+                )
+            }
+        }
+        .expect("did not expect new_get_response from largest deploy to fail")
+    })
 }

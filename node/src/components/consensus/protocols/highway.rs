@@ -148,8 +148,10 @@ impl<C: Context + 'static> HighwayProtocol<C> {
         // Allow about as many units as part of evidence for conflicting endorsements as we expect
         // a validator to create during an era. After that, they can endorse two conflicting forks
         // without getting faulty.;
-        let min_rounds_per_era = chainspec.core_config.minimum_era_height.max(
-            (TimeDiff::from_millis(1) + chainspec.core_config.era_duration) / minimum_round_length,
+        let min_rounds_per_era = min_rounds_per_era(
+            chainspec.core_config.minimum_era_height,
+            chainspec.core_config.era_duration,
+            minimum_round_length,
         );
         let endorsement_evidence_limit = min_rounds_per_era
             .saturating_mul(2)
@@ -1087,4 +1089,13 @@ where
     fn next_round_length(&self) -> Option<TimeDiff> {
         self.highway.next_round_length()
     }
+}
+
+// This can be derived entirely from the chainspec core_config.
+pub fn min_rounds_per_era(
+    minimum_era_height: u64,
+    era_duration: TimeDiff,
+    minimum_round_length: TimeDiff,
+) -> u64 {
+    minimum_era_height.max((TimeDiff::from_millis(1) + era_duration) / minimum_round_length)
 }

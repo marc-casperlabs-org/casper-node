@@ -26,6 +26,7 @@ use crate::effect::GossipTarget;
     Debug,
     Display,
 )]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[repr(u8)]
 pub enum Tag {
     /// A deploy identified by its hash and its approvals hash.

@@ -279,3 +279,19 @@ impl FetcherItem for SyncLeap {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+
+    use super::SyncLeapIdentifier;
+
+    impl LargestSpecimen for SyncLeapIdentifier {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            SyncLeapIdentifier {
+                block_hash: LargestSpecimen::largest_specimen(estimator),
+                trusted_ancestor_only: true,
+            }
+        }
+    }
+}

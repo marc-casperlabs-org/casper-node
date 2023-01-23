@@ -268,3 +268,35 @@ mod tests {
         assert_eq!(input, retrieved_bytes);
     }
 }
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+
+    use super::{HashingTrieRaw, TrieOrChunkId, ValueOrChunk};
+    use once_cell::sync::OnceCell;
+
+    impl LargestSpecimen for TrieOrChunkId {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            TrieOrChunkId(
+                LargestSpecimen::largest_specimen(estimator),
+                LargestSpecimen::largest_specimen(estimator),
+            )
+        }
+    }
+
+    impl<V: LargestSpecimen> LargestSpecimen for ValueOrChunk<V> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            todo!()
+        }
+    }
+
+    impl LargestSpecimen for HashingTrieRaw {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            HashingTrieRaw {
+                inner: LargestSpecimen::largest_specimen(estimator),
+                hash: OnceCell::with_value(LargestSpecimen::largest_specimen(estimator)),
+            }
+        }
+    }
+}

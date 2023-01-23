@@ -167,9 +167,11 @@ impl<C: Context> Evidence<C> {
 mod specimen_support {
 
     use crate::{
-        components::consensus::ClContext,
+        components::consensus::{protocols::highway::min_rounds_per_era, ClContext},
         testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
     };
+    use casper_types::TimeDiff;
+    use core::convert::TryInto;
 
     use super::{Evidence, EvidenceDiscriminants};
 
@@ -186,7 +188,29 @@ mod specimen_support {
                     unit1: LargestSpecimen::largest_specimen(estimator),
                     endorsement2: LargestSpecimen::largest_specimen(estimator),
                     unit2: LargestSpecimen::largest_specimen(estimator),
-                    swimlane2: todo!("Félix Vec<SignedWireUnit<C>>"),
+                    swimlane2: vec![
+                        LargestSpecimen::largest_specimen(estimator);
+                        min_rounds_per_era(
+                            estimator
+                                .require_parameter("minimum_era_height")
+                                .try_into()
+                                .unwrap(),
+                            TimeDiff::from_millis(
+                                estimator
+                                    .require_parameter("era_duration_ms")
+                                    .try_into()
+                                    .unwrap()
+                            ),
+                            TimeDiff::from_millis(
+                                estimator
+                                    .require_parameter("minimum_round_length_ms")
+                                    .try_into()
+                                    .unwrap()
+                            ),
+                        )
+                        .try_into()
+                        .unwrap()
+                    ],
                 },
             })
         }

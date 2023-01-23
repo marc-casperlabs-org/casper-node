@@ -817,6 +817,50 @@ pub struct BlockHeader {
     block_hash: OnceCell<BlockHash>,
 }
 
+#[cfg(test)]
+mod specimen_support {
+    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+
+    use super::{BlockExecutionResultsOrChunkId, BlockHeader, EraEnd};
+    use once_cell::sync::OnceCell;
+
+    impl LargestSpecimen for BlockHeader {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            BlockHeader {
+                parent_hash: LargestSpecimen::largest_specimen(estimator),
+                state_root_hash: LargestSpecimen::largest_specimen(estimator),
+                body_hash: LargestSpecimen::largest_specimen(estimator),
+                random_bit: LargestSpecimen::largest_specimen(estimator),
+                accumulated_seed: LargestSpecimen::largest_specimen(estimator),
+                era_end: LargestSpecimen::largest_specimen(estimator),
+                timestamp: LargestSpecimen::largest_specimen(estimator),
+                era_id: LargestSpecimen::largest_specimen(estimator),
+                height: LargestSpecimen::largest_specimen(estimator),
+                protocol_version: LargestSpecimen::largest_specimen(estimator),
+                block_hash: OnceCell::with_value(LargestSpecimen::largest_specimen(estimator)),
+            }
+        }
+    }
+
+    impl LargestSpecimen for EraEnd {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            EraEnd {
+                era_report: LargestSpecimen::largest_specimen(estimator),
+                next_era_validator_weights: todo!(),
+            }
+        }
+    }
+
+    impl LargestSpecimen for BlockExecutionResultsOrChunkId {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            BlockExecutionResultsOrChunkId {
+                chunk_index: u64::MAX,
+                block_hash: LargestSpecimen::largest_specimen(estimator),
+            }
+        }
+    }
+}
+
 impl BlockHeader {
     /// The parent block's hash.
     pub fn parent_hash(&self) -> &BlockHash {

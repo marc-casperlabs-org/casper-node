@@ -147,6 +147,7 @@ mod specimen_support {
         Dependency, DependencyDiscriminants, Endorsements, HashedWireUnit, Ping, SignedEndorsement,
         SignedWireUnit, Vertex, VertexDiscriminants, WireUnit,
     };
+    use core::convert::TryInto;
 
     impl LargestSpecimen for Vertex<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
@@ -202,17 +203,23 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             Endorsements {
                 unit: LargestSpecimen::largest_specimen(estimator),
-                endorsers: todo!("Félix Vec<(ValidatorIndex, C::Signature)>"),
+                endorsers: vec![
+                    LargestSpecimen::largest_specimen(estimator);
+                    estimator
+                        .require_parameter("validator_count")
+                        .try_into()
+                        .unwrap()
+                ],
             }
         }
     }
 
     impl LargestSpecimen for SignedEndorsement<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-            SignedEndorsement {
-                endorsement: LargestSpecimen::largest_specimen(estimator),
-                signature: LargestSpecimen::largest_specimen(estimator),
-            }
+            SignedEndorsement::new(
+                LargestSpecimen::largest_specimen(estimator),
+                LargestSpecimen::largest_specimen(estimator),
+            )
         }
     }
 
