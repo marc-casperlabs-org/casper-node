@@ -167,3 +167,22 @@ pub(crate) enum ApprovalsHashesValidationError {
         value_in_proof: Digest,
     },
 }
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+
+    use super::ApprovalsHashes;
+    use once_cell::sync::OnceCell;
+
+    impl LargestSpecimen for ApprovalsHashes {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            ApprovalsHashes {
+                block_hash: LargestSpecimen::largest_specimen(estimator),
+                approvals_hashes: todo!(),
+                merkle_proof_approvals: todo!(),
+                is_verified: OnceCell::with_value(Ok(())), // Not serialized, so we do not care
+            }
+        }
+    }
+}

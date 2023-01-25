@@ -78,21 +78,3 @@ impl Context for ClContext {
         true
     }
 }
-
-#[cfg(test)]
-mod specimen_support {
-    use std::sync::Arc;
-
-    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
-
-    use super::Keypair;
-
-    impl LargestSpecimen for Keypair {
-        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-            Keypair::new(
-                Arc::new(LargestSpecimen::largest_specimen(estimator)),
-                LargestSpecimen::largest_specimen(estimator),
-            )
-        }
-    }
-}

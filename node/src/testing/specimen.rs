@@ -3,8 +3,11 @@
 //! Structs implementing the specimen trait allow for specific sample instances being created, such
 //! as the biggest possible.
 
+use core::convert::TryInto;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
+    hash::Hash,
+    iter::FromIterator,
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Arc,
 };
@@ -27,7 +30,7 @@ use serde::Serialize;
 use strum::IntoEnumIterator;
 
 use crate::{
-    components::consensus::EraReport,
+    components::consensus::{utils::ValidatorMap, EraReport},
     protocol::Message,
     types::{
         Approval, ApprovalsHash, ApprovalsHashes, Block, BlockExecutionResultsOrChunk, BlockHash,
@@ -150,6 +153,29 @@ where
     }
 
     K::large_unique_sequence(estimator, count as usize)
+        .into_iter()
+        .map(|key| (key, LargestSpecimen::largest_specimen(estimator)))
+        .collect()
+}
+
+/// Generates a `HashMap` with the size taken from a property.
+///
+/// Keys are generated uniquely using `LargeUniqueSequence`, while values will be largest specimen.
+pub(crate) fn hash_map_distinct_from_prop<K, V, E>(
+    estimator: &E,
+    parameter_name: &'static str,
+) -> HashMap<K, V>
+where
+    V: LargestSpecimen,
+    K: Hash + LargeUniqueSequence<E> + Sized,
+    E: SizeEstimator,
+{
+    let count = estimator
+        .require_parameter(parameter_name)
+        .try_into()
+        .expect("a valid usize parameter");
+
+    K::large_unique_sequence(estimator, count)
         .into_iter()
         .map(|key| (key, LargestSpecimen::largest_specimen(estimator)))
         .collect()
@@ -519,10 +545,10 @@ impl LargestSpecimen for Deploy {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
             todo!("generate maximum number of unique dependencies"),
-            todo!("implement largest chain name"),
+            largest_chain_name(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            todo!("generate suitable secret key"),
+            &dummy_secret_key(),
             LargestSpecimen::largest_specimen(estimator),
         )
     }
@@ -539,19 +565,12 @@ impl LargestSpecimen for DeployId {
 
 impl LargestSpecimen for SyncLeap {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!()
-    }
-}
-
-impl LargestSpecimen for ApprovalsHashes {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!()
-    }
-}
-
-impl LargestSpecimen for BlockExecutionResultsOrChunk {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!()
+        SyncLeap {
+            trusted_ancestor_only: LargestSpecimen::largest_specimen(estimator),
+            trusted_block_header: LargestSpecimen::largest_specimen(estimator),
+            trusted_ancestor_headers: vec_prop_specimen(estimator, todo!()),
+            signed_block_headers: vec_prop_specimen(estimator, todo!()),
+        }
     }
 }
 
@@ -591,20 +610,20 @@ impl LargestSpecimen for ExecutableDeployItem {
                 ExecutableDeployItemDiscriminants::ModuleBytes => {
                     ExecutableDeployItem::ModuleBytes {
                         module_bytes: todo!("how to create maximum size contract bytes?"),
-                        args: todo!("how are runtime arguments limited?"),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByHash => {
                     ExecutableDeployItem::StoredContractByHash {
                         hash: LargestSpecimen::largest_specimen(estimator),
-                        entry_point: todo!("whats the maximum length for an entry point?"),
+                        entry_point: largest_contract_entry_point(estimator),
                         args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByName => {
                     ExecutableDeployItem::StoredContractByName {
-                        name: todo!("what's the max length for a contract stored by name?"),
-                        entry_point: todo!("what's the max length for an entry point?"),
+                        name: largest_contract_name(estimator),
+                        entry_point: largest_contract_entry_point(estimator),
                         args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
@@ -612,15 +631,15 @@ impl LargestSpecimen for ExecutableDeployItem {
                     ExecutableDeployItem::StoredVersionedContractByHash {
                         hash: LargestSpecimen::largest_specimen(estimator),
                         version: LargestSpecimen::largest_specimen(estimator),
-                        entry_point: todo!("what's the max length for an entry point?"),
+                        entry_point: largest_contract_entry_point(estimator),
                         args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredVersionedContractByName => {
                     ExecutableDeployItem::StoredVersionedContractByName {
-                        name: todo!("what's the max length for a contract stored by name?"),
+                        name: largest_contract_name(estimator),
                         version: LargestSpecimen::largest_specimen(estimator),
-                        entry_point: todo!("what's the max length for an entry point?"),
+                        entry_point: largest_contract_entry_point(estimator),
                         args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
@@ -657,31 +676,29 @@ impl LargestSpecimen for RuntimeArgs {
     }
 }
 
-impl LargestSpecimen for SecretKey {
+impl LargestSpecimen for TrieRaw {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        #[derive(strum::EnumIter)]
-        enum SecretKeyDiscriminants {
-            System,
-            Ed25519,
-            Secp256k1h,
-        }
-
-        todo!("SecretKey does not implement Serialize")
-        //largest_variant::<Self, SecretKeyDiscriminants, _, _>(estimator, |variant| match variant {
-        //    SecretKeyDiscriminants::System => SecretKey::System,
-        //    SecretKeyDiscriminants::Ed25519 => {
-        //        SecretKey::Ed25519(todo!())
-        //    }
-        //    SecretKeyDiscriminants::Secp256k1 => {
-        //        SecretKey::Secp256k1(todo!())
-        //    }
-        //})
+        todo!("TrieRaw(Bytes)")
     }
 }
 
-impl LargestSpecimen for TrieRaw {
+impl LargestSpecimen for BTreeSet<Digest> {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!()
+        todo!("I believe it's again the number of validators, but I'll have to double check")
+    }
+}
+
+impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        let max_validators: usize = estimator
+            .require_parameter("validator_count")
+            .try_into()
+            .unwrap();
+
+        ValidatorMap::from_iter(
+            std::iter::repeat_with(|| LargestSpecimen::largest_specimen(estimator))
+                .take(max_validators),
+        )
     }
 }
 
@@ -755,4 +772,42 @@ pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
         }
         .expect("did not expect new_get_response from largest deploy to fail")
     })
+}
+
+fn largest_contract_name<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(
+        estimator
+            .require_parameter("contract_name_limit")
+            .try_into()
+            .unwrap(),
+    )
+}
+
+fn largest_chain_name<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(
+        estimator
+            .require_parameter("network_name_limit")
+            .try_into()
+            .unwrap(),
+    )
+}
+
+fn largest_contract_entry_point<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(
+        estimator
+            .require_parameter("entry_point_limit")
+            .try_into()
+            .unwrap(),
+    )
+}
+
+fn string_max_characters(max_char: usize) -> String {
+    std::iter::repeat(HIGHEST_UNICODE_CODEPOINT)
+        .take(max_char)
+        .collect()
+}
+
+pub fn dummy_secret_key() -> SecretKey {
+    SecretKey::ed25519_from_bytes([u8::MAX; 32])
+        .expect("This secret key is invalid (Largest Specimen gen)")
 }

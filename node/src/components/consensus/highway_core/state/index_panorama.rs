@@ -54,3 +54,17 @@ impl IndexPanorama {
         validator_map
     }
 }
+
+#[cfg(test)]
+mod specimen_support {
+    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+
+    use super::IndexObservation;
+    use core::convert::TryInto;
+
+    impl LargestSpecimen for IndexObservation {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            IndexObservation::NextSeq(LargestSpecimen::largest_specimen(estimator))
+        }
+    }
+}

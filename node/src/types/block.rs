@@ -821,7 +821,10 @@ pub struct BlockHeader {
 mod specimen_support {
     use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
 
-    use super::{BlockExecutionResultsOrChunkId, BlockHeader, EraEnd};
+    use super::{
+        BlockExecutionResultsOrChunk, BlockExecutionResultsOrChunkId, BlockHeader,
+        BlockHeaderWithMetadata, BlockSignatures, EraEnd,
+    };
     use once_cell::sync::OnceCell;
 
     impl LargestSpecimen for BlockHeader {
@@ -856,6 +859,35 @@ mod specimen_support {
             BlockExecutionResultsOrChunkId {
                 chunk_index: u64::MAX,
                 block_hash: LargestSpecimen::largest_specimen(estimator),
+            }
+        }
+    }
+
+    impl LargestSpecimen for BlockHeaderWithMetadata {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            BlockHeaderWithMetadata {
+                block_header: LargestSpecimen::largest_specimen(estimator),
+                block_signatures: LargestSpecimen::largest_specimen(estimator),
+            }
+        }
+    }
+
+    impl LargestSpecimen for BlockSignatures {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            BlockSignatures {
+                block_hash: LargestSpecimen::largest_specimen(estimator),
+                era_id: LargestSpecimen::largest_specimen(estimator),
+                proofs: todo!(),
+            }
+        }
+    }
+
+    impl LargestSpecimen for BlockExecutionResultsOrChunk {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            BlockExecutionResultsOrChunk {
+                block_hash: LargestSpecimen::largest_specimen(estimator),
+                value: todo!(),
+                is_valid: OnceCell::with_value(Ok(true)),
             }
         }
     }

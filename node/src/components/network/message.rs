@@ -506,6 +506,8 @@ mod tests {
             match name {
                 // Limit to a network name of a thousand characters for now.
                 "network_name_limit" => Some(1000),
+                "contract_name_limit" => Some(1000),
+                "entry_point_limit" => Some(1000),
                 "validator_count" => unimplemented!("chainspec: validator_slots"),
                 "minimum_era_height" => unimplemented!(""),
                 "era_duration_ms" => unimplemented!(""),

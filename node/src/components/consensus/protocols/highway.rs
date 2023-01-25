@@ -701,8 +701,8 @@ mod specimen_support {
                         }
                     }
                     HighwayMessageDiscriminants::LatestStateRequest => {
-                        HighwayMessage::LatestStateRequest(todo!(
-                            "Félix ValidatorMap<IndexObservation>"
+                        HighwayMessage::LatestStateRequest(LargestSpecimen::largest_specimen(
+                            estimator,
                         ))
                     }
                 }

@@ -2249,13 +2249,14 @@ where
 
 #[cfg(test)]
 mod specimen_support {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, sync::Arc};
 
     use crate::{
-        components::consensus::{utils::ValidatorIndex, ClContext},
+        components::consensus::{cl_context::Keypair, utils::ValidatorIndex, ClContext},
         testing::specimen::{
-            btree_map_distinct_from_prop, btree_set_distinct_from_prop, largest_variant,
-            vec_prop_specimen, LargeUniqueSequence, LargestSpecimen, SizeEstimator,
+            btree_map_distinct_from_prop, btree_set_distinct_from_prop, dummy_secret_key,
+            largest_variant, vec_prop_specimen, LargeUniqueSequence, LargestSpecimen,
+            SizeEstimator,
         },
     };
 
@@ -2361,7 +2362,10 @@ mod specimen_support {
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
-                &LargestSpecimen::largest_specimen(estimator),
+                &Keypair::new(
+                    Arc::new(dummy_secret_key()),
+                    LargestSpecimen::largest_specimen(estimator),
+                ),
             )
         }
     }

@@ -246,14 +246,14 @@ mod specimen_support {
     impl LargestSpecimen for WireUnit<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             WireUnit {
-                panorama: todo!("Félix ValidatorMap<Observation<C>>"),
+                panorama: LargestSpecimen::largest_specimen(estimator),
                 creator: LargestSpecimen::largest_specimen(estimator),
                 instance_id: LargestSpecimen::largest_specimen(estimator),
                 value: LargestSpecimen::largest_specimen(estimator),
                 seq_number: LargestSpecimen::largest_specimen(estimator),
                 timestamp: LargestSpecimen::largest_specimen(estimator),
                 round_exp: LargestSpecimen::largest_specimen(estimator),
-                endorsed: todo!("Félix BTreeSet<C::Hash>"),
+                endorsed: LargestSpecimen::largest_specimen(estimator),
             }
         }
     }
