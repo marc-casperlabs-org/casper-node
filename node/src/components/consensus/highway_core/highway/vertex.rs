@@ -140,14 +140,16 @@ impl<C: Context> Vertex<C> {
 mod specimen_support {
     use crate::{
         components::consensus::ClContext,
-        testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
+        testing::specimen::{
+            btree_set_distinct_from_prop, largest_variant, vec_prop_specimen, LargestSpecimen,
+            SizeEstimator,
+        },
     };
 
     use super::{
         Dependency, DependencyDiscriminants, Endorsements, HashedWireUnit, Ping, SignedEndorsement,
         SignedWireUnit, Vertex, VertexDiscriminants, WireUnit,
     };
-    use core::convert::TryInto;
 
     impl LargestSpecimen for Vertex<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
@@ -203,13 +205,7 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             Endorsements {
                 unit: LargestSpecimen::largest_specimen(estimator),
-                endorsers: vec![
-                    LargestSpecimen::largest_specimen(estimator);
-                    estimator
-                        .require_parameter("validator_count")
-                        .try_into()
-                        .unwrap()
-                ],
+                endorsers: vec_prop_specimen(estimator, "validator_count"),
             }
         }
     }
@@ -253,7 +249,7 @@ mod specimen_support {
                 seq_number: LargestSpecimen::largest_specimen(estimator),
                 timestamp: LargestSpecimen::largest_specimen(estimator),
                 round_exp: LargestSpecimen::largest_specimen(estimator),
-                endorsed: LargestSpecimen::largest_specimen(estimator),
+                endorsed: btree_set_distinct_from_prop(estimator, "validator_count"),
             }
         }
     }

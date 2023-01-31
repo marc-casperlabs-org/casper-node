@@ -819,7 +819,7 @@ pub struct BlockHeader {
 
 #[cfg(test)]
 mod specimen_support {
-    use crate::testing::specimen::{LargestSpecimen, SizeEstimator};
+    use crate::testing::specimen::{btree_map_distinct_from_prop, LargestSpecimen, SizeEstimator};
 
     use super::{
         BlockExecutionResultsOrChunk, BlockExecutionResultsOrChunkId, BlockHeader,
@@ -849,7 +849,10 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             EraEnd {
                 era_report: LargestSpecimen::largest_specimen(estimator),
-                next_era_validator_weights: todo!(),
+                next_era_validator_weights: btree_map_distinct_from_prop(
+                    estimator,
+                    "validator_count",
+                ),
             }
         }
     }
@@ -877,7 +880,7 @@ mod specimen_support {
             BlockSignatures {
                 block_hash: LargestSpecimen::largest_specimen(estimator),
                 era_id: LargestSpecimen::largest_specimen(estimator),
-                proofs: todo!(),
+                proofs: btree_map_distinct_from_prop(estimator, "validator_count"),
             }
         }
     }
@@ -886,7 +889,7 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             BlockExecutionResultsOrChunk {
                 block_hash: LargestSpecimen::largest_specimen(estimator),
-                value: todo!(),
+                value: LargestSpecimen::largest_specimen(estimator),
                 is_valid: OnceCell::with_value(Ok(true)),
             }
         }

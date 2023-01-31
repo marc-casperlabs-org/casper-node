@@ -5,32 +5,28 @@
 
 use core::convert::TryInto;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    hash::Hash,
+    collections::{BTreeMap, BTreeSet},
     iter::FromIterator,
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Arc,
 };
 
-use casper_execution_engine::{
-    core::engine_state::{
-        executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
-    },
-    storage::trie::TrieRaw,
+use casper_execution_engine::core::engine_state::{
+    executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
 };
-use casper_hashing::Digest;
+use casper_hashing::{ChunkWithProof, Digest};
 use casper_types::{
+    bytesrepr::Bytes,
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
-    AsymmetricType, ContractHash, ContractPackageHash, DeployHash, EraId, ProtocolVersion,
-    RuntimeArgs, SecretKey, SemVer, SignatureDiscriminants, TimeDiff, Timestamp,
-    DEPLOY_HASH_LENGTH, KEY_HASH_LENGTH, U512,
+    AsymmetricType, ContractHash, ContractPackageHash, EraId, ProtocolVersion, RuntimeArgs,
+    SecretKey, SemVer, SignatureDiscriminants, TimeDiff, Timestamp, KEY_HASH_LENGTH, U512,
 };
 use either::Either;
 use serde::Serialize;
 use strum::IntoEnumIterator;
 
 use crate::{
-    components::consensus::{utils::ValidatorMap, EraReport},
+    components::consensus::{min_rounds_per_era, utils::ValidatorMap, EraReport},
     protocol::Message,
     types::{
         Approval, ApprovalsHash, ApprovalsHashes, Block, BlockExecutionResultsOrChunk, BlockHash,
@@ -158,29 +154,6 @@ where
         .collect()
 }
 
-/// Generates a `HashMap` with the size taken from a property.
-///
-/// Keys are generated uniquely using `LargeUniqueSequence`, while values will be largest specimen.
-pub(crate) fn hash_map_distinct_from_prop<K, V, E>(
-    estimator: &E,
-    parameter_name: &'static str,
-) -> HashMap<K, V>
-where
-    V: LargestSpecimen,
-    K: Hash + LargeUniqueSequence<E> + Sized,
-    E: SizeEstimator,
-{
-    let count = estimator
-        .require_parameter(parameter_name)
-        .try_into()
-        .expect("a valid usize parameter");
-
-    K::large_unique_sequence(estimator, count)
-        .into_iter()
-        .map(|key| (key, LargestSpecimen::largest_specimen(estimator)))
-        .collect()
-}
-
 /// Generates a `BTreeSet` with the size taken from a property.
 ///
 /// Value are generated uniquely using `LargeUniqueSequence`.
@@ -270,6 +243,12 @@ impl LargestSpecimen for u64 {
 impl LargestSpecimen for u128 {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         u128::MAX
+    }
+}
+
+impl<T: LargestSpecimen + Copy, const N: usize> LargestSpecimen for [T; N] {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        [LargestSpecimen::largest_specimen(estimator); N]
     }
 }
 
@@ -404,6 +383,15 @@ where
     }
 }
 
+impl<E> LargeUniqueSequence<E> for Digest
+where
+    E: SizeEstimator,
+{
+    fn large_unique_sequence(_estimator: &E, count: usize) -> BTreeSet<Self> {
+        (0..count).map(|n| Digest::hash(n.to_ne_bytes())).collect()
+    }
+}
+
 impl LargestSpecimen for Signature {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         largest_variant::<Self, SignatureDiscriminants, _, _>(estimator, |variant| match variant {
@@ -523,18 +511,10 @@ impl LargestSpecimen for DeployHashWithApprovals {
         //       magnitude intact though.
         let max_items = estimator.require_parameter("max_deploys_per_block")
             + estimator.require_parameter("max_transfers_per_block");
-        let approvals_per_deploy =
-            (estimator.require_parameter("max_approvals_per_block") + (max_items - 1)) / max_items;
         DeployHashWithApprovals::new(
             LargestSpecimen::largest_specimen(estimator),
             btree_set_distinct(estimator, max_items as usize),
         )
-    }
-}
-
-impl LargestSpecimen for DeployHash {
-    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
-        DeployHash::new([0xFFu8; DEPLOY_HASH_LENGTH])
     }
 }
 
@@ -544,7 +524,7 @@ impl LargestSpecimen for Deploy {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            todo!("generate maximum number of unique dependencies"),
+            vec![/* Legacy field, always empty */],
             largest_chain_name(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
@@ -560,17 +540,6 @@ impl LargestSpecimen for DeployId {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
         )
-    }
-}
-
-impl LargestSpecimen for SyncLeap {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        SyncLeap {
-            trusted_ancestor_only: LargestSpecimen::largest_specimen(estimator),
-            trusted_block_header: LargestSpecimen::largest_specimen(estimator),
-            trusted_ancestor_headers: vec_prop_specimen(estimator, todo!()),
-            signed_block_headers: vec_prop_specimen(estimator, todo!()),
-        }
     }
 }
 
@@ -597,7 +566,7 @@ where
 }
 
 impl LargestSpecimen for ApprovalsHash {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         ApprovalsHash::compute(&Default::default()).expect("empty approvals hash should compute")
     }
 }
@@ -609,7 +578,7 @@ impl LargestSpecimen for ExecutableDeployItem {
             match variant {
                 ExecutableDeployItemDiscriminants::ModuleBytes => {
                     ExecutableDeployItem::ModuleBytes {
-                        module_bytes: todo!("how to create maximum size contract bytes?"),
+                        module_bytes: Bytes::from(vec_prop_specimen(estimator, "module_bytes")),
                         args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
@@ -652,7 +621,7 @@ impl LargestSpecimen for ExecutableDeployItem {
 }
 
 impl LargestSpecimen for U512 {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         U512::max_value()
     }
 }
@@ -670,21 +639,14 @@ impl LargestSpecimen for ContractPackageHash {
 }
 
 impl LargestSpecimen for RuntimeArgs {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!("Cannot init the type directly")
-        //RuntimeArgs(todo!("Félix Vec<NamedArg>"))
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        Default::default()
     }
 }
 
-impl LargestSpecimen for TrieRaw {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!("TrieRaw(Bytes)")
-    }
-}
-
-impl LargestSpecimen for BTreeSet<Digest> {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        todo!("I believe it's again the number of validators, but I'll have to double check")
+impl LargestSpecimen for ChunkWithProof {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        ChunkWithProof::new(&[0xFF; 8 * 1024 * 1024], 0).unwrap()
     }
 }
 
@@ -810,4 +772,22 @@ fn string_max_characters(max_char: usize) -> String {
 pub fn dummy_secret_key() -> SecretKey {
     SecretKey::ed25519_from_bytes([u8::MAX; 32])
         .expect("This secret key is invalid (Largest Specimen gen)")
+}
+
+pub(crate) fn estimator_min_rounds_per_era(estimator: &impl SizeEstimator) -> usize {
+    (|| {
+        let minimum_era_height = estimator
+            .require_parameter("minimum_era_height")
+            .try_into()?;
+        let era_duration_ms =
+            TimeDiff::from_millis(estimator.require_parameter("era_duration_ms").try_into()?);
+        let minimum_round_length_ms = TimeDiff::from_millis(
+            estimator
+                .require_parameter("minimum_round_length_ms")
+                .try_into()?,
+        );
+
+        min_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms).try_into()
+    })()
+    .expect("all numbers to be safely converted to usize")
 }

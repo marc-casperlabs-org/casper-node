@@ -1091,11 +1091,12 @@ where
     }
 }
 
-// This can be derived entirely from the chainspec core_config.
+/// TODO
 pub fn min_rounds_per_era(
     minimum_era_height: u64,
     era_duration: TimeDiff,
     minimum_round_length: TimeDiff,
 ) -> u64 {
+    // This can be derived entirely from the chainspec core_config.
     minimum_era_height.max((TimeDiff::from_millis(1) + era_duration) / minimum_round_length)
 }

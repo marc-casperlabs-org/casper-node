@@ -508,10 +508,16 @@ mod tests {
                 "network_name_limit" => Some(1000),
                 "contract_name_limit" => Some(1000),
                 "entry_point_limit" => Some(1000),
+                "recent_era_count" => unimplemented!("chainspec: unbonding_delay - auction_delay"),
                 "validator_count" => unimplemented!("chainspec: validator_slots"),
                 "minimum_era_height" => unimplemented!(""),
                 "era_duration_ms" => unimplemented!(""),
                 "minimum_round_length_ms" => unimplemented!(""),
+                // The maximum size contract bytes:
+                "module_bytes" => unimplemented!(""),
+                // deploys and transfers in a block:
+                "approvals_hashes" => unimplemented!(""),
+                "max_pointer_per_node" => Some(255),
                 _ => None,
             }
         }
