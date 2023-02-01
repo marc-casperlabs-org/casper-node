@@ -26,7 +26,7 @@ use serde::Serialize;
 use strum::IntoEnumIterator;
 
 use crate::{
-    components::consensus::{min_rounds_per_era, utils::ValidatorMap, EraReport},
+    components::consensus::{max_rounds_per_era, utils::ValidatorMap, EraReport},
     protocol::Message,
     types::{
         Approval, ApprovalsHash, ApprovalsHashes, Block, BlockExecutionResultsOrChunk, BlockHash,
@@ -787,7 +787,7 @@ pub(crate) fn estimator_min_rounds_per_era(estimator: &impl SizeEstimator) -> us
                 .try_into()?,
         );
 
-        min_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms).try_into()
+        max_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms).try_into()
     })()
     .expect("all numbers to be safely converted to usize")
 }

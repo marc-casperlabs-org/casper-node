@@ -148,7 +148,7 @@ impl<C: Context + 'static> HighwayProtocol<C> {
         // Allow about as many units as part of evidence for conflicting endorsements as we expect
         // a validator to create during an era. After that, they can endorse two conflicting forks
         // without getting faulty.;
-        let min_rounds_per_era = min_rounds_per_era(
+        let min_rounds_per_era = max_rounds_per_era(
             chainspec.core_config.minimum_era_height,
             chainspec.core_config.era_duration,
             minimum_round_length,
@@ -1091,8 +1091,13 @@ where
     }
 }
 
-/// TODO
-pub fn min_rounds_per_era(
+/// Maximum possible rounds in one era.
+///
+/// It is the maximum of:
+/// - The era duration divided by the minimum round length,
+///   that is the maximum number of blocks that can fit within the duration of one era,
+/// - The minimum era height, which is the maximum number of blocks that can be created in one era.
+pub fn max_rounds_per_era(
     minimum_era_height: u64,
     era_duration: TimeDiff,
     minimum_round_length: TimeDiff,

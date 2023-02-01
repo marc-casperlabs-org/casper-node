@@ -64,7 +64,7 @@ pub(crate) use era_supervisor::{debug::EraDump, EraSupervisor};
 pub(crate) use highway_core::highway::Vertex as HighwayVertex;
 pub(crate) use leader_sequence::LeaderSequence;
 #[cfg(test)]
-pub(crate) use protocols::highway::min_rounds_per_era;
+pub(crate) use protocols::highway::max_rounds_per_era;
 pub(crate) use protocols::highway::HighwayMessage;
 pub(crate) use validator_change::ValidatorChange;
 

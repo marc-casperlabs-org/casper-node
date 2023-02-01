@@ -167,7 +167,7 @@ impl<C: Context> Evidence<C> {
 mod specimen_support {
 
     use crate::{
-        components::consensus::{protocols::highway::min_rounds_per_era, ClContext},
+        components::consensus::{protocols::highway::max_rounds_per_era, ClContext},
         testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
     };
     use casper_types::TimeDiff;
@@ -190,7 +190,7 @@ mod specimen_support {
                     unit2: LargestSpecimen::largest_specimen(estimator),
                     swimlane2: vec![
                         LargestSpecimen::largest_specimen(estimator);
-                        min_rounds_per_era(
+                        max_rounds_per_era(
                             estimator
                                 .require_parameter("minimum_era_height")
                                 .try_into()
