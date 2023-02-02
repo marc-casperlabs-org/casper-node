@@ -185,7 +185,6 @@ mod specimen_support {
     };
     use casper_hashing::Digest;
     use casper_types::{bytesrepr::Bytes, CLValue, Key, StoredValue};
-    use core::convert::TryInto;
     use once_cell::sync::OnceCell;
     use std::collections::BTreeMap;
 
@@ -233,10 +232,6 @@ mod specimen_support {
                         );
                         estimator
                             .require_parameter("max_pointer_per_node")
-                            .try_into()
-                            .expect(
-                                "the `max_pointer_per_node` to be a valid `usize`"
-                            )
                     ],
                 },
                 TrieMerkleProofStepDiscriminants::Extension => TrieMerkleProofStep::Extension {

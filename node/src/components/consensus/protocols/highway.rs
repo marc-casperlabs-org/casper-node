@@ -1096,11 +1096,22 @@ where
 /// It is the maximum of:
 /// - The era duration divided by the minimum round length,
 ///   that is the maximum number of blocks that can fit within the duration of one era,
-/// - The minimum era height, which is the maximum number of blocks that can be created in one era.
+/// - The minimum era height, which is the minimum number of blocks that can be created in one era.
 pub fn max_rounds_per_era(
     minimum_era_height: u64,
     era_duration: TimeDiff,
     minimum_round_length: TimeDiff,
 ) -> u64 {
     minimum_era_height.max((TimeDiff::from_millis(1) + era_duration) / minimum_round_length)
+}
+
+#[test]
+fn max_rounds_per_era_returns_the_correct_value_for_prod_chainspec_value() {
+    let max_rounds_per_era = max_rounds_per_era(
+        20,
+        TimeDiff::from_seconds(120 * 60),
+        TimeDiff::from_millis(32768),
+    );
+
+    assert_eq!(219, max_rounds_per_era);
 }

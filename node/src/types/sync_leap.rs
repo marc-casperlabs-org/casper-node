@@ -283,7 +283,7 @@ impl FetcherItem for SyncLeap {
 #[cfg(test)]
 mod specimen_support {
     use crate::testing::specimen::{
-        estimator_min_rounds_per_era, vec_of_largest_specimen, vec_prop_specimen, LargestSpecimen,
+        estimator_max_rounds_per_era, vec_of_largest_specimen, vec_prop_specimen, LargestSpecimen,
         SizeEstimator,
     };
 
@@ -299,7 +299,7 @@ mod specimen_support {
                 // and era_duration / minimum_block_time
                 trusted_ancestor_headers: vec_of_largest_specimen(
                     estimator,
-                    estimator_min_rounds_per_era(estimator),
+                    estimator_max_rounds_per_era(estimator),
                 ),
                 signed_block_headers: vec_prop_specimen(estimator, "recent_era_count"),
             }

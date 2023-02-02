@@ -435,7 +435,7 @@ mod specimen_support {
         P: Serialize + LargestSpecimen,
     {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-            let largest_network_name = estimator.require_parameter("network_name_limit") as usize;
+            let largest_network_name = estimator.require_parameter("network_name_limit");
 
             largest_variant::<Self, MessageDiscriminants, _, _>(
                 estimator,
@@ -516,8 +516,8 @@ mod tests {
                 "era_duration_ms" => Some(120 * 60 * 1000),
                 // MAX (minimum_block_time, 1ms)
                 "minimum_round_length_ms" => Some(32768),
-                // The maximum size contract bytes:
-                "module_bytes" => unimplemented!(""),
+                // chainspec: max_deploy_size (The maximum size contract bytes)
+                "module_bytes" => Some(1_048_576),
                 // chainspec: block_max_deploy_count and block_max_transfer_count:
                 "approvals_hashes" => Some(50 + 1250),
                 "max_pointer_per_node" => Some(255),

@@ -53,14 +53,24 @@ pub(crate) trait SizeEstimator {
 
     /// Requires a parameter.
     ///
-    /// Like `get_parameter`, but does not accept `None` as an answer.
+    /// Like `get_parameter`, but does not accept `None` as an answer, and it
+    /// returns the parameter converted to the asked type.
     ///
     /// ## Panics
     ///
-    /// If the named parameter is not set, panics.
-    fn require_parameter(&self, name: &'static str) -> i64 {
-        self.get_parameter(name)
-            .unwrap_or_else(|| panic!("missing parameter \"{}\" for specimen estimation", name))
+    /// - If the named parameter is not set, panics.
+    /// - If `T` cannot be converted from `i64`.
+    fn require_parameter<T: TryFrom<i64>>(&self, name: &'static str) -> T {
+        let value = self
+            .get_parameter(name)
+            .unwrap_or_else(|| panic!("missing parameter \"{}\" for specimen estimation", name));
+
+        T::try_from(value).unwrap_or_else(|_| {
+            panic!(
+                "Failed to convert the parameter `{name}` of value `{value}` to the type `{}`",
+                core::any::type_name::<T>()
+            )
+        })
     }
 }
 
@@ -105,21 +115,6 @@ where
         .into_iter()
         .next()
         .expect("should have at least one candidate")
-}
-
-/// Returns the parameter converted to the asked type.
-pub(crate) fn param_as_type<E: SizeEstimator, T: TryFrom<i64>>(
-    estimator: &E,
-    param_name: &'static str,
-) -> T {
-    let value = estimator.require_parameter(param_name);
-
-    T::try_from(value).unwrap_or_else(|_| {
-        panic!(
-            "Failed to convert the parameter `{param_name}` of value `{value}` to the type `{}`",
-            core::any::type_name::<T>()
-        )
-    })
 }
 
 /// Generates a vec of a given size filled with the largest specimen.
@@ -525,11 +520,11 @@ impl LargestSpecimen for DeployHashWithApprovals {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         // Note: This is an upper bound, the actual value is lower. We are keeping the order of
         //       magnitude intact though.
-        let max_items = estimator.require_parameter("max_deploys_per_block")
-            + estimator.require_parameter("max_transfers_per_block");
+        let max_items = estimator.require_parameter::<usize>("max_deploys_per_block")
+            + estimator.require_parameter::<usize>("max_transfers_per_block");
         DeployHashWithApprovals::new(
             LargestSpecimen::largest_specimen(estimator),
-            btree_set_distinct(estimator, max_items as usize),
+            btree_set_distinct(estimator, max_items),
         )
     }
 }
@@ -674,7 +669,7 @@ impl LargestSpecimen for SecretKey {
 
 impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        let max_validators = param_as_type(estimator, "validator_count");
+        let max_validators = estimator.require_parameter("validator_count");
 
         ValidatorMap::from_iter(
             std::iter::repeat_with(|| LargestSpecimen::largest_specimen(estimator))
@@ -765,32 +760,17 @@ pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
 
 /// Returns the largest string allowed for a contract name.
 fn largest_contract_name<E: SizeEstimator>(estimator: &E) -> String {
-    string_max_characters(
-        estimator
-            .require_parameter("contract_name_limit")
-            .try_into()
-            .expect("the parameter to be a valid usize"),
-    )
+    string_max_characters(estimator.require_parameter("contract_name_limit"))
 }
 
 /// Returns the largest string allowed for a chain name.
 fn largest_chain_name<E: SizeEstimator>(estimator: &E) -> String {
-    string_max_characters(
-        estimator
-            .require_parameter("network_name_limit")
-            .try_into()
-            .expect("the parameter to be a valid usize"),
-    )
+    string_max_characters(estimator.require_parameter("network_name_limit"))
 }
 
 /// Returns the largest string allowed for a contract entry point.
 fn largest_contract_entry_point<E: SizeEstimator>(estimator: &E) -> String {
-    string_max_characters(
-        estimator
-            .require_parameter("entry_point_limit")
-            .try_into()
-            .expect("the parameter to be a valid usize"),
-    )
+    string_max_characters(estimator.require_parameter("entry_point_limit"))
 }
 
 /// Returns a string with `len`s characters of the largest possible size.
@@ -803,20 +783,13 @@ fn string_max_characters(max_char: usize) -> String {
 /// Returns the max rounds per era with the specimen parameters.
 ///
 /// See the [`max_rounds_per_era`] function.
-pub(crate) fn estimator_min_rounds_per_era(estimator: &impl SizeEstimator) -> usize {
-    (|| {
-        let minimum_era_height = estimator
-            .require_parameter("minimum_era_height")
-            .try_into()?;
-        let era_duration_ms =
-            TimeDiff::from_millis(estimator.require_parameter("era_duration_ms").try_into()?);
-        let minimum_round_length_ms = TimeDiff::from_millis(
-            estimator
-                .require_parameter("minimum_round_length_ms")
-                .try_into()?,
-        );
+pub(crate) fn estimator_max_rounds_per_era(estimator: &impl SizeEstimator) -> usize {
+    let minimum_era_height = estimator.require_parameter("minimum_era_height");
+    let era_duration_ms = TimeDiff::from_millis(estimator.require_parameter("era_duration_ms"));
+    let minimum_round_length_ms =
+        TimeDiff::from_millis(estimator.require_parameter("minimum_round_length_ms"));
 
-        max_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms).try_into()
-    })()
-    .expect("all numbers to be safely converted to usize")
+    max_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms)
+        .try_into()
+        .expect("to be a valid `usize`")
 }

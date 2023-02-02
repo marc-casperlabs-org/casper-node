@@ -167,11 +167,12 @@ impl<C: Context> Evidence<C> {
 mod specimen_support {
 
     use crate::{
-        components::consensus::{protocols::highway::max_rounds_per_era, ClContext},
-        testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator},
+        components::consensus::ClContext,
+        testing::specimen::{
+            estimator_max_rounds_per_era, largest_variant, vec_of_largest_specimen,
+            LargestSpecimen, SizeEstimator,
+        },
     };
-    use casper_types::TimeDiff;
-    use core::convert::TryInto;
 
     use super::{Evidence, EvidenceDiscriminants};
 
@@ -188,29 +189,10 @@ mod specimen_support {
                     unit1: LargestSpecimen::largest_specimen(estimator),
                     endorsement2: LargestSpecimen::largest_specimen(estimator),
                     unit2: LargestSpecimen::largest_specimen(estimator),
-                    swimlane2: vec![
-                        LargestSpecimen::largest_specimen(estimator);
-                        max_rounds_per_era(
-                            estimator
-                                .require_parameter("minimum_era_height")
-                                .try_into()
-                                .expect("a valid u64"),
-                            TimeDiff::from_millis(
-                                estimator
-                                    .require_parameter("era_duration_ms")
-                                    .try_into()
-                                    .expect("a valid u64")
-                            ),
-                            TimeDiff::from_millis(
-                                estimator
-                                    .require_parameter("minimum_round_length_ms")
-                                    .try_into()
-                                    .expect("a valid u64")
-                            ),
-                        )
-                        .try_into()
-                        .expect("a valid usize")
-                    ],
+                    swimlane2: vec_of_largest_specimen(
+                        estimator,
+                        estimator_max_rounds_per_era(estimator),
+                    ),
                 },
             })
         }
