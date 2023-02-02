@@ -678,12 +678,6 @@ impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
     }
 }
 
-//impl LargestSpecimen for Digest {
-//    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-//        Digest::hash("")
-//    }
-//}
-
 /// Returns the largest `Message::GetRequest`.
 pub(crate) fn largest_get_request<E: SizeEstimator>(estimator: &E) -> Message {
     largest_variant::<Message, Tag, _, _>(estimator, |variant| {
