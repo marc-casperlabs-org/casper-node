@@ -63,6 +63,7 @@ mod specimen_support {
 
     impl LargestSpecimen for IndexObservation {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+            // This is the largest variant since the other one is empty:
             IndexObservation::NextSeq(LargestSpecimen::largest_specimen(estimator))
         }
     }

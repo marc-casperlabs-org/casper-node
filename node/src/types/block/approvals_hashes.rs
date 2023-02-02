@@ -170,8 +170,12 @@ pub(crate) enum ApprovalsHashesValidationError {
 
 #[cfg(test)]
 mod specimen_support {
-    use crate::testing::specimen::{
-        largest_variant, vec_of_largest_specimen, vec_prop_specimen, LargestSpecimen, SizeEstimator,
+    use crate::{
+        contract_runtime::{APPROVALS_CHECKSUM_NAME, EXECUTION_RESULTS_CHECKSUM_NAME},
+        testing::specimen::{
+            largest_variant, vec_of_largest_specimen, vec_prop_specimen, LargestSpecimen,
+            SizeEstimator,
+        },
     };
 
     use super::ApprovalsHashes;
@@ -189,14 +193,17 @@ mod specimen_support {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
             let data = {
                 let mut map = BTreeMap::new();
-                map.insert("key1", Digest::hash(""));
-                map.insert("key2", Digest::hash(""));
+                map.insert(APPROVALS_CHECKSUM_NAME, Digest::largest_specimen(estimator));
+                map.insert(
+                    EXECUTION_RESULTS_CHECKSUM_NAME,
+                    Digest::largest_specimen(estimator),
+                );
                 map
             };
             let merkle_proof_approvals = TrieMerkleProof::new(
                 Key::ChecksumRegistry,
                 StoredValue::CLValue(CLValue::from_t(data).expect("a correct cl value")),
-                // 2^64/2^13 = 2^51, so 51 items
+                // 2^64/2^13 = 2^51, so 51 items:
                 vec_of_largest_specimen(estimator, 51).into(),
             );
             ApprovalsHashes {
@@ -222,12 +229,14 @@ mod specimen_support {
                     indexed_pointers_with_hole: vec![
                         (
                             u8::MAX,
-                            Pointer::LeafPointer(Digest::hash(""))
+                            Pointer::LeafPointer(LargestSpecimen::largest_specimen(estimator))
                         );
                         estimator
                             .require_parameter("max_pointer_per_node")
                             .try_into()
-                            .expect("to get the require parameter")
+                            .expect(
+                                "the `max_pointer_per_node` to be a valid `usize`"
+                            )
                     ],
                 },
                 TrieMerkleProofStepDiscriminants::Extension => TrieMerkleProofStep::Extension {

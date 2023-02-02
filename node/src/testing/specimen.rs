@@ -6,6 +6,7 @@
 use core::convert::TryInto;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    convert::TryFrom,
     iter::FromIterator,
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Arc,
@@ -104,6 +105,21 @@ where
         .into_iter()
         .next()
         .expect("should have at least one candidate")
+}
+
+/// Returns the parameter converted to the asked type.
+pub(crate) fn param_as_type<E: SizeEstimator, T: TryFrom<i64>>(
+    estimator: &E,
+    param_name: &'static str,
+) -> T {
+    let value = estimator.require_parameter(param_name);
+
+    T::try_from(value).unwrap_or_else(|_| {
+        panic!(
+            "Failed to convert the parameter `{param_name}` of value `{value}` to the type `{}`",
+            core::any::type_name::<T>()
+        )
+    })
 }
 
 /// Generates a vec of a given size filled with the largest specimen.
@@ -528,7 +544,7 @@ impl LargestSpecimen for Deploy {
             largest_chain_name(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            &dummy_secret_key(),
+            &LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
         )
     }
@@ -646,16 +662,19 @@ impl LargestSpecimen for RuntimeArgs {
 
 impl LargestSpecimen for ChunkWithProof {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
-        ChunkWithProof::new(&[0xFF; 8 * 1024 * 1024], 0).unwrap()
+        ChunkWithProof::new(&[0xFF; 8 * 1024 * 1024], 0).expect("the chunk to be correctly created")
+    }
+}
+
+impl LargestSpecimen for SecretKey {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        SecretKey::ed25519_from_bytes([u8::MAX; 32]).expect("valid secret key bytes")
     }
 }
 
 impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-        let max_validators: usize = estimator
-            .require_parameter("validator_count")
-            .try_into()
-            .unwrap();
+        let max_validators = param_as_type(estimator, "validator_count");
 
         ValidatorMap::from_iter(
             std::iter::repeat_with(|| LargestSpecimen::largest_specimen(estimator))
@@ -664,6 +683,13 @@ impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
     }
 }
 
+//impl LargestSpecimen for Digest {
+//    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+//        Digest::hash("")
+//    }
+//}
+
+/// Returns the largest `Message::GetRequest`.
 pub(crate) fn largest_get_request<E: SizeEstimator>(estimator: &E) -> Message {
     largest_variant::<Message, Tag, _, _>(estimator, |variant| {
         match variant {
@@ -699,6 +725,7 @@ pub(crate) fn largest_get_request<E: SizeEstimator>(estimator: &E) -> Message {
     })
 }
 
+/// Returns the largest `Message::GetResponse`.
 pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
     largest_variant::<Message, Tag, _, _>(estimator, |variant| {
         match variant {
@@ -736,44 +763,46 @@ pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
     })
 }
 
+/// Returns the largest string allowed for a contract name.
 fn largest_contract_name<E: SizeEstimator>(estimator: &E) -> String {
     string_max_characters(
         estimator
             .require_parameter("contract_name_limit")
             .try_into()
-            .unwrap(),
+            .expect("the parameter to be a valid usize"),
     )
 }
 
+/// Returns the largest string allowed for a chain name.
 fn largest_chain_name<E: SizeEstimator>(estimator: &E) -> String {
     string_max_characters(
         estimator
             .require_parameter("network_name_limit")
             .try_into()
-            .unwrap(),
+            .expect("the parameter to be a valid usize"),
     )
 }
 
+/// Returns the largest string allowed for a contract entry point.
 fn largest_contract_entry_point<E: SizeEstimator>(estimator: &E) -> String {
     string_max_characters(
         estimator
             .require_parameter("entry_point_limit")
             .try_into()
-            .unwrap(),
+            .expect("the parameter to be a valid usize"),
     )
 }
 
+/// Returns a string with `len`s characters of the largest possible size.
 fn string_max_characters(max_char: usize) -> String {
     std::iter::repeat(HIGHEST_UNICODE_CODEPOINT)
         .take(max_char)
         .collect()
 }
 
-pub fn dummy_secret_key() -> SecretKey {
-    SecretKey::ed25519_from_bytes([u8::MAX; 32])
-        .expect("This secret key is invalid (Largest Specimen gen)")
-}
-
+/// Returns the max rounds per era with the specimen parameters.
+///
+/// See the [`max_rounds_per_era`] function.
 pub(crate) fn estimator_min_rounds_per_era(estimator: &impl SizeEstimator) -> usize {
     (|| {
         let minimum_era_height = estimator

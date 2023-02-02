@@ -194,22 +194,22 @@ mod specimen_support {
                             estimator
                                 .require_parameter("minimum_era_height")
                                 .try_into()
-                                .unwrap(),
+                                .expect("a valid u64"),
                             TimeDiff::from_millis(
                                 estimator
                                     .require_parameter("era_duration_ms")
                                     .try_into()
-                                    .unwrap()
+                                    .expect("a valid u64")
                             ),
                             TimeDiff::from_millis(
                                 estimator
                                     .require_parameter("minimum_round_length_ms")
                                     .try_into()
-                                    .unwrap()
+                                    .expect("a valid u64")
                             ),
                         )
                         .try_into()
-                        .unwrap()
+                        .expect("a valid usize")
                     ],
                 },
             })
