@@ -2249,10 +2249,10 @@ where
 
 #[cfg(test)]
 mod specimen_support {
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, sync::Arc};
 
     use crate::{
-        components::consensus::{utils::ValidatorIndex, ClContext},
+        components::consensus::{cl_context::Keypair, utils::ValidatorIndex, ClContext},
         testing::specimen::{
             btree_map_distinct_from_prop, btree_set_distinct_from_prop, largest_variant,
             vec_prop_specimen, LargeUniqueSequence, LargestSpecimen, SizeEstimator,
@@ -2356,13 +2356,15 @@ mod specimen_support {
 
     impl LargestSpecimen for SignedMessage<ClContext> {
         fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
-            let secret = todo!();
             SignedMessage::sign_new(
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
                 LargestSpecimen::largest_specimen(estimator),
-                secret,
+                &Keypair::new(
+                    Arc::new(LargestSpecimen::largest_specimen(estimator)),
+                    LargestSpecimen::largest_specimen(estimator),
+                ),
             )
         }
     }

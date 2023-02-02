@@ -221,7 +221,9 @@ impl Debug for Message {
 
 #[cfg(test)]
 mod specimen_support {
-    use crate::testing::specimen::{largest_variant, LargestSpecimen, SizeEstimator};
+    use crate::testing::specimen::{
+        largest_get_request, largest_get_response, largest_variant, LargestSpecimen, SizeEstimator,
+    };
 
     use super::{Message, MessageDiscriminants};
 
@@ -250,8 +252,8 @@ mod specimen_support {
                     MessageDiscriminants::AddressGossiper => {
                         Message::AddressGossiper(LargestSpecimen::largest_specimen(estimator))
                     }
-                    MessageDiscriminants::GetRequest => todo!(),
-                    MessageDiscriminants::GetResponse => todo!(),
+                    MessageDiscriminants::GetRequest => largest_get_request(estimator),
+                    MessageDiscriminants::GetResponse => largest_get_response(estimator),
                     MessageDiscriminants::FinalitySignature => {
                         Message::FinalitySignature(LargestSpecimen::largest_specimen(estimator))
                     }

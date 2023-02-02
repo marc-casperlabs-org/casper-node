@@ -63,6 +63,8 @@ pub(crate) use era_supervisor::{debug::EraDump, EraSupervisor};
 #[cfg(test)]
 pub(crate) use highway_core::highway::Vertex as HighwayVertex;
 pub(crate) use leader_sequence::LeaderSequence;
+#[cfg(test)]
+pub(crate) use protocols::highway::max_rounds_per_era;
 pub(crate) use protocols::highway::HighwayMessage;
 pub(crate) use validator_change::ValidatorChange;
 
@@ -418,7 +420,9 @@ mod specimen_support {
                     EraMessageDiscriminants::Zug => {
                         EraMessage::Zug(LargestSpecimen::largest_specimen(estimator))
                     }
-                    EraMessageDiscriminants::Highway => EraMessage::Highway(todo!()),
+                    EraMessageDiscriminants::Highway => {
+                        EraMessage::Highway(LargestSpecimen::largest_specimen(estimator))
+                    }
                 }
             })
         }

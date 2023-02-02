@@ -3,8 +3,11 @@
 //! Structs implementing the specimen trait allow for specific sample instances being created, such
 //! as the biggest possible.
 
+use core::convert::TryInto;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    convert::TryFrom,
+    iter::FromIterator,
     net::{Ipv6Addr, SocketAddr, SocketAddrV6},
     sync::Arc,
 };
@@ -12,21 +15,24 @@ use std::{
 use casper_execution_engine::core::engine_state::{
     executable_deploy_item::ExecutableDeployItemDiscriminants, ExecutableDeployItem,
 };
-use casper_hashing::Digest;
+use casper_hashing::{ChunkWithProof, Digest};
 use casper_types::{
+    bytesrepr::Bytes,
     crypto::{PublicKey, PublicKeyDiscriminants, Signature},
-    AsymmetricType, DeployHash, EraId, ProtocolVersion, SemVer, SignatureDiscriminants, TimeDiff,
-    Timestamp, DEPLOY_HASH_LENGTH, U512,
+    AsymmetricType, ContractHash, ContractPackageHash, EraId, ProtocolVersion, RuntimeArgs,
+    SecretKey, SemVer, SignatureDiscriminants, TimeDiff, Timestamp, KEY_HASH_LENGTH, U512,
 };
 use either::Either;
 use serde::Serialize;
 use strum::IntoEnumIterator;
 
 use crate::{
-    components::consensus::EraReport,
+    components::consensus::{max_rounds_per_era, utils::ValidatorMap, EraReport},
+    protocol::Message,
     types::{
-        Approval, ApprovalsHash, Block, BlockBody, BlockHash, BlockPayload, Deploy,
-        DeployHashWithApprovals, DeployId, FinalitySignature, FinalitySignatureId, FinalizedBlock,
+        Approval, ApprovalsHash, ApprovalsHashes, Block, BlockExecutionResultsOrChunk, BlockHash,
+        BlockHeader, BlockPayload, Deploy, DeployHashWithApprovals, DeployId, FinalitySignature,
+        FinalitySignatureId, FinalizedBlock, LegacyDeploy, SyncLeap, Tag, TrieOrChunk,
     },
 };
 
@@ -47,14 +53,24 @@ pub(crate) trait SizeEstimator {
 
     /// Requires a parameter.
     ///
-    /// Like `get_parameter`, but does not accept `None` as an answer.
+    /// Like `get_parameter`, but does not accept `None` as an answer, and it
+    /// returns the parameter converted to the asked type.
     ///
     /// ## Panics
     ///
-    /// If the named parameter is not set, panics.
-    fn require_parameter(&self, name: &'static str) -> i64 {
-        self.get_parameter(name)
-            .unwrap_or_else(|| panic!("missing parameter \"{}\" for specimen estimation", name))
+    /// - If the named parameter is not set, panics.
+    /// - If `T` cannot be converted from `i64`.
+    fn require_parameter<T: TryFrom<i64>>(&self, name: &'static str) -> T {
+        let value = self
+            .get_parameter(name)
+            .unwrap_or_else(|| panic!("missing parameter \"{}\" for specimen estimation", name));
+
+        T::try_from(value).unwrap_or_else(|_| {
+            panic!(
+                "Failed to convert the parameter `{name}` of value `{value}` to the type `{}`",
+                core::any::type_name::<T>()
+            )
+        })
     }
 }
 
@@ -176,7 +192,7 @@ where
     T: Ord + LargeUniqueSequence<E> + Sized,
     E: SizeEstimator,
 {
-    T::large_unique_sequence(estimator, count as usize)
+    T::large_unique_sequence(estimator, count)
 }
 
 impl LargestSpecimen for SocketAddr {
@@ -211,6 +227,12 @@ impl LargestSpecimen for bool {
     }
 }
 
+impl LargestSpecimen for u8 {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        u8::MAX
+    }
+}
+
 impl LargestSpecimen for u16 {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         u16::MAX
@@ -232,6 +254,12 @@ impl LargestSpecimen for u64 {
 impl LargestSpecimen for u128 {
     fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         u128::MAX
+    }
+}
+
+impl<T: LargestSpecimen + Copy, const N: usize> LargestSpecimen for [T; N] {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        [LargestSpecimen::largest_specimen(estimator); N]
     }
 }
 
@@ -366,6 +394,15 @@ where
     }
 }
 
+impl<E> LargeUniqueSequence<E> for Digest
+where
+    E: SizeEstimator,
+{
+    fn large_unique_sequence(_estimator: &E, count: usize) -> BTreeSet<Self> {
+        (0..count).map(|n| Digest::hash(n.to_ne_bytes())).collect()
+    }
+}
+
 impl LargestSpecimen for Signature {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         largest_variant::<Self, SignatureDiscriminants, _, _>(estimator, |variant| match variant {
@@ -483,20 +520,12 @@ impl LargestSpecimen for DeployHashWithApprovals {
     fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
         // Note: This is an upper bound, the actual value is lower. We are keeping the order of
         //       magnitude intact though.
-        let max_items = estimator.require_parameter("max_deploys_per_block")
-            + estimator.require_parameter("max_transfers_per_block");
-        let approvals_per_deploy =
-            (estimator.require_parameter("max_approvals_per_block") + (max_items - 1)) / max_items;
+        let max_items = estimator.require_parameter::<usize>("max_deploys_per_block")
+            + estimator.require_parameter::<usize>("max_transfers_per_block");
         DeployHashWithApprovals::new(
             LargestSpecimen::largest_specimen(estimator),
-            btree_set_distinct(estimator, max_items as usize),
+            btree_set_distinct(estimator, max_items),
         )
-    }
-}
-
-impl LargestSpecimen for DeployHash {
-    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
-        DeployHash::new([0xFFu8; DEPLOY_HASH_LENGTH])
     }
 }
 
@@ -506,11 +535,11 @@ impl LargestSpecimen for Deploy {
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            todo!("generate maximum number of unique dependencies"),
-            todo!("implement largest chain name"),
+            vec![/* Legacy field, always empty */],
+            largest_chain_name(estimator),
             LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
-            todo!("generate suitable secret key"),
+            &LargestSpecimen::largest_specimen(estimator),
             LargestSpecimen::largest_specimen(estimator),
         )
     }
@@ -548,7 +577,7 @@ where
 }
 
 impl LargestSpecimen for ApprovalsHash {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         ApprovalsHash::compute(&Default::default()).expect("empty approvals hash should compute")
     }
 }
@@ -560,50 +589,201 @@ impl LargestSpecimen for ExecutableDeployItem {
             match variant {
                 ExecutableDeployItemDiscriminants::ModuleBytes => {
                     ExecutableDeployItem::ModuleBytes {
-                        module_bytes: todo!("how to create maximum size contract bytes?"),
-                        args: todo!("how are runtime arguments limited?"),
+                        module_bytes: Bytes::from(vec_prop_specimen(estimator, "module_bytes")),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByHash => {
                     ExecutableDeployItem::StoredContractByHash {
-                        hash: todo!(),
-                        entry_point: todo!("whats the maximum length for an entry point?"),
-                        args: todo!(),
+                        hash: LargestSpecimen::largest_specimen(estimator),
+                        entry_point: largest_contract_entry_point(estimator),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredContractByName => {
                     ExecutableDeployItem::StoredContractByName {
-                        name: todo!("what's the max length for a contract stored by name?"),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        name: largest_contract_name(estimator),
+                        entry_point: largest_contract_entry_point(estimator),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredVersionedContractByHash => {
                     ExecutableDeployItem::StoredVersionedContractByHash {
-                        hash: todo!(),
-                        version: todo!(),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        hash: LargestSpecimen::largest_specimen(estimator),
+                        version: LargestSpecimen::largest_specimen(estimator),
+                        entry_point: largest_contract_entry_point(estimator),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
                 ExecutableDeployItemDiscriminants::StoredVersionedContractByName => {
                     ExecutableDeployItem::StoredVersionedContractByName {
-                        name: todo!(),
-                        version: todo!(),
-                        entry_point: todo!(),
-                        args: todo!(),
+                        name: largest_contract_name(estimator),
+                        version: LargestSpecimen::largest_specimen(estimator),
+                        entry_point: largest_contract_entry_point(estimator),
+                        args: LargestSpecimen::largest_specimen(estimator),
                     }
                 }
-                ExecutableDeployItemDiscriminants::Transfer => {
-                    ExecutableDeployItem::Transfer { args: todo!() }
-                }
+                ExecutableDeployItemDiscriminants::Transfer => ExecutableDeployItem::Transfer {
+                    args: LargestSpecimen::largest_specimen(estimator),
+                },
             }
         })
     }
 }
 
 impl LargestSpecimen for U512 {
-    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
         U512::max_value()
     }
+}
+
+impl LargestSpecimen for ContractHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        ContractHash::new([LargestSpecimen::largest_specimen(estimator); KEY_HASH_LENGTH])
+    }
+}
+
+impl LargestSpecimen for ContractPackageHash {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        ContractPackageHash::new([LargestSpecimen::largest_specimen(estimator); KEY_HASH_LENGTH])
+    }
+}
+
+impl LargestSpecimen for RuntimeArgs {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        Default::default()
+    }
+}
+
+impl LargestSpecimen for ChunkWithProof {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        ChunkWithProof::new(&[0xFF; 8 * 1024 * 1024], 0).expect("the chunk to be correctly created")
+    }
+}
+
+impl LargestSpecimen for SecretKey {
+    fn largest_specimen<E: SizeEstimator>(_estimator: &E) -> Self {
+        SecretKey::ed25519_from_bytes([u8::MAX; 32]).expect("valid secret key bytes")
+    }
+}
+
+impl<T: LargestSpecimen> LargestSpecimen for ValidatorMap<T> {
+    fn largest_specimen<E: SizeEstimator>(estimator: &E) -> Self {
+        let max_validators = estimator.require_parameter("validator_count");
+
+        ValidatorMap::from_iter(
+            std::iter::repeat_with(|| LargestSpecimen::largest_specimen(estimator))
+                .take(max_validators),
+        )
+    }
+}
+
+/// Returns the largest `Message::GetRequest`.
+pub(crate) fn largest_get_request<E: SizeEstimator>(estimator: &E) -> Message {
+    largest_variant::<Message, Tag, _, _>(estimator, |variant| {
+        match variant {
+            Tag::Deploy => {
+                Message::new_get_request::<Deploy>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::LegacyDeploy => Message::new_get_request::<LegacyDeploy>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::Block => {
+                Message::new_get_request::<Block>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::BlockHeader => Message::new_get_request::<BlockHeader>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::TrieOrChunk => Message::new_get_request::<TrieOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::FinalitySignature => Message::new_get_request::<FinalitySignature>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::SyncLeap => {
+                Message::new_get_request::<SyncLeap>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::ApprovalsHashes => Message::new_get_request::<ApprovalsHashes>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::BlockExecutionResults => Message::new_get_request::<BlockExecutionResultsOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+        }
+        .expect("did not expect new_get_request from largest deploy to fail")
+    })
+}
+
+/// Returns the largest `Message::GetResponse`.
+pub(crate) fn largest_get_response<E: SizeEstimator>(estimator: &E) -> Message {
+    largest_variant::<Message, Tag, _, _>(estimator, |variant| {
+        match variant {
+            Tag::Deploy => {
+                Message::new_get_response::<Deploy>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::LegacyDeploy => Message::new_get_response::<LegacyDeploy>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::Block => {
+                Message::new_get_response::<Block>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::BlockHeader => Message::new_get_response::<BlockHeader>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::TrieOrChunk => Message::new_get_response::<TrieOrChunk>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::FinalitySignature => Message::new_get_response::<FinalitySignature>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::SyncLeap => {
+                Message::new_get_response::<SyncLeap>(&LargestSpecimen::largest_specimen(estimator))
+            }
+            Tag::ApprovalsHashes => Message::new_get_response::<ApprovalsHashes>(
+                &LargestSpecimen::largest_specimen(estimator),
+            ),
+            Tag::BlockExecutionResults => {
+                Message::new_get_response::<BlockExecutionResultsOrChunk>(
+                    &LargestSpecimen::largest_specimen(estimator),
+                )
+            }
+        }
+        .expect("did not expect new_get_response from largest deploy to fail")
+    })
+}
+
+/// Returns the largest string allowed for a contract name.
+fn largest_contract_name<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(estimator.require_parameter("contract_name_limit"))
+}
+
+/// Returns the largest string allowed for a chain name.
+fn largest_chain_name<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(estimator.require_parameter("network_name_limit"))
+}
+
+/// Returns the largest string allowed for a contract entry point.
+fn largest_contract_entry_point<E: SizeEstimator>(estimator: &E) -> String {
+    string_max_characters(estimator.require_parameter("entry_point_limit"))
+}
+
+/// Returns a string with `len`s characters of the largest possible size.
+fn string_max_characters(max_char: usize) -> String {
+    std::iter::repeat(HIGHEST_UNICODE_CODEPOINT)
+        .take(max_char)
+        .collect()
+}
+
+/// Returns the max rounds per era with the specimen parameters.
+///
+/// See the [`max_rounds_per_era`] function.
+pub(crate) fn estimator_max_rounds_per_era(estimator: &impl SizeEstimator) -> usize {
+    let minimum_era_height = estimator.require_parameter("minimum_era_height");
+    let era_duration_ms = TimeDiff::from_millis(estimator.require_parameter("era_duration_ms"));
+    let minimum_round_length_ms =
+        TimeDiff::from_millis(estimator.require_parameter("minimum_round_length_ms"));
+
+    max_rounds_per_era(minimum_era_height, era_duration_ms, minimum_round_length_ms)
+        .try_into()
+        .expect("to be a valid `usize`")
 }
