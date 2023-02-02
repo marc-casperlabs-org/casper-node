@@ -508,15 +508,18 @@ mod tests {
                 "network_name_limit" => Some(1000),
                 "contract_name_limit" => Some(1000),
                 "entry_point_limit" => Some(1000),
-                "recent_era_count" => unimplemented!("chainspec: unbonding_delay - auction_delay"),
-                "validator_count" => unimplemented!("chainspec: validator_slots"),
-                "minimum_era_height" => unimplemented!(""),
-                "era_duration_ms" => unimplemented!(""),
-                "minimum_round_length_ms" => unimplemented!(""),
+                // chainspec: unbonding_delay - auction_delay:
+                "recent_era_count" => Some(7 - 1),
+                // chainspec: validator_slots:
+                "validator_count" => Some(100),
+                "minimum_era_height" => Some(20),
+                "era_duration_ms" => Some(120 * 60 * 1000),
+                // MAX (minimum_block_time, 1ms)
+                "minimum_round_length_ms" => Some(32768),
                 // The maximum size contract bytes:
                 "module_bytes" => unimplemented!(""),
-                // deploys and transfers in a block:
-                "approvals_hashes" => unimplemented!(""),
+                // chainspec: block_max_deploy_count and block_max_transfer_count:
+                "approvals_hashes" => Some(50 + 1250),
                 "max_pointer_per_node" => Some(255),
                 _ => None,
             }
