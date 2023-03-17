@@ -3,7 +3,12 @@
 //! Tracks the state of connections, which may be uni- or bi-directional, depending on whether a
 //! peer has connected back to us. Asymmetric connections are usually removed periodically.
 
-use std::{collections::BTreeSet, mem, net::SocketAddr, time::Instant};
+use std::{
+    collections::BTreeSet,
+    mem,
+    net::SocketAddr,
+    time::{Duration, Instant},
+};
 
 use datasize::DataSize;
 use tracing::{debug, warn};
@@ -199,33 +204,25 @@ impl ConnectionSymmetry {
             ConnectionSymmetry::OutgoingOnly { .. } | ConnectionSymmetry::Gone => None,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use std::{
-        collections::BTreeSet,
-        net::SocketAddr,
-        time::{Duration, Instant},
-    };
-
-    use crate::testing::test_clock::TestClock;
-
-    use super::ConnectionSymmetry;
-
-    /// Indicates whether or not a connection should be cleaned up.
-    fn should_be_reaped(
-        connection_symmetry: &ConnectionSymmetry,
-        now: Instant,
-        max_time_asymmetric: Duration,
-    ) -> bool {
-        match connection_symmetry {
-            ConnectionSymmetry::IncomingOnly { since, .. } => now >= *since + max_time_asymmetric,
-            ConnectionSymmetry::OutgoingOnly { since } => now >= *since + max_time_asymmetric,
+    /// Indicates whether or not a connection should be dropped.
+    fn should_be_reaped(&self, now: Instant, max_time_asymmetric: Duration) -> bool {
+        match self {
+            ConnectionSymmetry::IncomingOnly { since, .. }
+            | ConnectionSymmetry::OutgoingOnly { since } => now >= *since + max_time_asymmetric,
             ConnectionSymmetry::Symmetric { .. } => false,
             ConnectionSymmetry::Gone => true,
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
+
+    use crate::testing::test_clock::TestClock;
+
+    use super::ConnectionSymmetry;
 
     #[test]
     fn symmetry_successful_lifecycles() {
@@ -237,11 +234,11 @@ mod tests {
         let mut sym = ConnectionSymmetry::default();
 
         // Symmetries that have just been initialized are always reaped instantly.
-        assert!(should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // Adding an incoming address.
         sym.add_incoming(peer_addr, clock.now());
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // Add an outgoing address.
         clock.advance(Duration::from_secs(20));
@@ -249,7 +246,7 @@ mod tests {
 
         // The connection will now never be reaped, as it is symmetrical.
         clock.advance(Duration::from_secs(1_000_000));
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
     }
 
     #[test]
@@ -264,12 +261,12 @@ mod tests {
 
         // Adding an incoming address prevents it from being reaped.
         sym.add_incoming(peer_addr, clock.now());
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // Adding another incoming address does not change the timeout.
         clock.advance(Duration::from_secs(120));
         sym.add_incoming(peer_addr2, clock.now());
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // We also expected `peer_addr` and `peer_addr2` to be the incoming addresses now.
         let mut expected = BTreeSet::new();
@@ -279,27 +276,25 @@ mod tests {
 
         // After 240 seconds since the first incoming connection, we finally are due reaping.
         clock.advance(Duration::from_secs(120));
-        assert!(should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(sym.should_be_reaped(clock.now(), max_time_asymmetric));
     }
 
     #[test]
     fn symmetry_lifecycle_reaps_outgoing_only() {
         let mut clock = TestClock::new();
-
         let max_time_asymmetric = Duration::from_secs(240);
-
         let mut sym = ConnectionSymmetry::default();
 
         // Mark as outgoing, to prevent reaping.
         sym.mark_outgoing(clock.now());
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // Marking as outgoing again is usually an error, but should not affect the timeout.
         clock.advance(Duration::from_secs(120));
-        assert!(!should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(!sym.should_be_reaped(clock.now(), max_time_asymmetric));
 
         // After 240 seconds we finally are reaping.
         clock.advance(Duration::from_secs(120));
-        assert!(should_be_reaped(&sym, clock.now(), max_time_asymmetric));
+        assert!(sym.should_be_reaped(clock.now(), max_time_asymmetric));
     }
 }
