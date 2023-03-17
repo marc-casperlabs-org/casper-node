@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.  The format
 
 ### Changed
 
+* The underlying low-level networking protocol has been changed greatly and now features out-of-order delivery, backpressure and multiplexing, which should reduce latency under load and increase robustness of the node through the `muxink` crate.
 * Metrics recording by message type and the `net_queued_direct_messages` metric have been replaced by a new set of metrics organized by channel type instead.
 
 ### Removed
