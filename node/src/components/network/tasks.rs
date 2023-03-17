@@ -527,6 +527,7 @@ pub(super) async fn multi_channel_message_receiver<REv, P>(
     shutdown: ObservableFuse,
     peer_id: NodeId,
     span: Span,
+    channel_metrics: [ChannelMetrics; Channel::COUNT],
 ) -> Result<(), MessageReaderError>
 where
     P: DeserializeOwned + Send + Display + Payload,
@@ -588,6 +589,11 @@ where
             .map_err(MessageReaderError::DeserializationError)?;
 
         trace!(%msg, %channel, "message received");
+
+        channel_metrics[channel as usize].received_count.inc();
+        channel_metrics[channel as usize]
+            .received_count
+            .inc_by(frame.len() as u64);
 
         // The limiter stops _all_ channels, as they share a resource pool anyway.
         limiter

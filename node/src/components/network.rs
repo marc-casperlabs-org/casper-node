@@ -665,6 +665,7 @@ where
                         self.shutdown_fuse.inner().clone(),
                         peer_id,
                         span.clone(),
+                        self.net_metrics.channel_metrics.clone(),
                     )
                     .instrument(span)
                     .event(move |result| Event::IncomingClosed {
