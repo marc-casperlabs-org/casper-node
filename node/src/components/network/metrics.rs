@@ -48,10 +48,17 @@ pub(super) struct ChannelMetrics {
     pub(super) buffer_count: IntGauge,
     /// Number of bytes waiting in the internal queue.
     pub(super) buffer_bytes: IntGauge,
-    /// Number of messages pushed to active sink.
+    /// Number of messages pushed to outgoing sinks.
     pub(super) sent_count: IntCounter,
-    /// Number of bytes pushed to active sink.
+    /// Number of bytes pushed to outgoing sinks.
     pub(super) sent_bytes: IntCounter,
+    /// Number of messages received on incoming streams.
+    pub(super) received_count: IntCounter,
+    /// Number of bytes deserialized from incoming streams.
+    pub(super) received_bytes: IntCounter,
+
+    /// Registry instance.
+    registry: Registry,
 }
 
 impl Metrics {
@@ -212,22 +219,42 @@ impl ChannelMetrics {
             format!("number of payload bytes sent on channel {}", channel),
         )?;
 
+        let received_count = IntCounter::new(
+            format!("net_chan_{}_received_count", lowercase_channel),
+            format!("number of messages received on channel {}", channel),
+        )?;
+
+        let received_bytes = IntCounter::new(
+            format!("net_chan_{}_received_size", lowercase_channel),
+            format!("number of payload bytes received on channel {}", channel),
+        )?;
+
         registry.register(Box::new(buffer_count.clone()))?;
         registry.register(Box::new(buffer_bytes.clone()))?;
         registry.register(Box::new(sent_count.clone()))?;
         registry.register(Box::new(sent_bytes.clone()))?;
+        registry.register(Box::new(received_count.clone()))?;
+        registry.register(Box::new(received_bytes.clone()))?;
 
         Ok(ChannelMetrics {
             buffer_count,
-            buffer_bytes: buffer_bytes,
+            buffer_bytes,
             sent_count,
             sent_bytes,
+            received_count,
+            received_bytes,
+            registry: registry.clone(),
         })
     }
 }
 
 impl Drop for ChannelMetrics {
     fn drop(&mut self) {
-        todo!()
+        unregister_metric!(self.registry, self.buffer_count);
+        unregister_metric!(self.registry, self.buffer_bytes);
+        unregister_metric!(self.registry, self.sent_count);
+        unregister_metric!(self.registry, self.sent_bytes);
+        unregister_metric!(self.registry, self.received_count);
+        unregister_metric!(self.registry, self.received_bytes);
     }
 }
