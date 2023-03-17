@@ -1,6 +1,9 @@
-use prometheus::{Counter, IntCounter, IntGauge, Registry};
+use std::convert::TryInto;
 
-use super::outgoing::OutgoingMetrics;
+use prometheus::{Counter, IntCounter, IntGauge, Registry};
+use strum::{EnumCount, IntoEnumIterator};
+
+use super::{outgoing::OutgoingMetrics, Channel};
 use crate::unregister_metric;
 
 /// Network-type agnostic networking metrics.
@@ -31,8 +34,24 @@ pub(super) struct Metrics {
     /// Total time spent delaying incoming traffic from non-validators due to limiter, in seconds.
     pub(super) accumulated_incoming_limiter_delay: Counter,
 
+    /// Per-channel metrics.
+    pub(super) channel_metrics: [ChannelMetrics; Channel::COUNT],
+
     /// Registry instance.
     registry: Registry,
+}
+
+/// A set of metrics for a specific channel.
+#[derive(Debug, Clone)]
+pub(super) struct ChannelMetrics {
+    /// Number of messages waiting in the internal queue.
+    buffer_count: IntGauge,
+    /// Number of bytes waiting in the internal queue.
+    buffer_size: IntGauge,
+    /// Number of messages pushed to active sink.
+    sent_count: IntCounter,
+    /// Number of bytes pushed to active sink.
+    sent_size: IntCounter,
 }
 
 impl Metrics {
@@ -106,6 +125,14 @@ impl Metrics {
         registry.register(Box::new(accumulated_outgoing_limiter_delay.clone()))?;
         registry.register(Box::new(accumulated_incoming_limiter_delay.clone()))?;
 
+        // Constructing channel metrics efficiently without unsafe code and external crates is a
+        // bit of a challenge. We eat a single heap allocation and copy here, since this code is
+        // only run once anyway.
+        let channel_metrics_result: Result<Vec<ChannelMetrics>, prometheus::Error> =
+            Channel::iter()
+                .map(|channel| ChannelMetrics::new(channel, registry))
+                .collect();
+
         Ok(Metrics {
             broadcast_requests,
             direct_message_requests,
@@ -120,6 +147,13 @@ impl Metrics {
 
             accumulated_outgoing_limiter_delay,
             accumulated_incoming_limiter_delay,
+
+            channel_metrics: channel_metrics_result?
+                .try_into()
+                // This expect will only fail if the given `Vec` has the wrong size, which should
+                // be impossible.
+                .expect("failed to construct channel metrics"),
+
             registry: registry.clone(),
         })
     }
@@ -151,5 +185,49 @@ impl Drop for Metrics {
 
         unregister_metric!(self.registry, self.accumulated_outgoing_limiter_delay);
         unregister_metric!(self.registry, self.accumulated_incoming_limiter_delay);
+    }
+}
+
+impl ChannelMetrics {
+    pub(super) fn new(channel: Channel, registry: &Registry) -> Result<Self, prometheus::Error> {
+        let lowercase_channel = channel.to_string().to_lowercase();
+
+        let buffer_count = IntGauge::new(
+            format!("net_chan_{}_buffer_count", lowercase_channel),
+            format!("number of messages buffered on channel {}", channel),
+        )?;
+
+        let buffer_size = IntGauge::new(
+            format!("net_chan_{}_buffer_size", lowercase_channel),
+            format!("number of payload bytes buffered on channel {}", channel),
+        )?;
+
+        let sent_count = IntCounter::new(
+            format!("net_chan_{}_sent_count", lowercase_channel),
+            format!("number of messages sent on channel {}", channel),
+        )?;
+
+        let sent_size = IntCounter::new(
+            format!("net_chan_{}_sent_size", lowercase_channel),
+            format!("number of payload bytes sent on channel {}", channel),
+        )?;
+
+        registry.register(Box::new(buffer_count.clone()))?;
+        registry.register(Box::new(buffer_size.clone()))?;
+        registry.register(Box::new(sent_count.clone()))?;
+        registry.register(Box::new(sent_size.clone()))?;
+
+        Ok(ChannelMetrics {
+            buffer_count,
+            buffer_size,
+            sent_count,
+            sent_size,
+        })
+    }
+}
+
+impl Drop for ChannelMetrics {
+    fn drop(&mut self) {
+        todo!()
     }
 }
