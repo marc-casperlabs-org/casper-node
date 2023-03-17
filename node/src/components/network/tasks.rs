@@ -616,7 +616,7 @@ where
             .received_count
             .inc_by(frame.len() as u64);
 
-        // The limiter stops _all_ channels, as they share a resource pool anyway.
+        // The limiter stops _all_ channels, as they share a resource pool across all nodes anyway.
         limiter
             .request_allowance(msg.payload_incoming_resource_estimate(&context.payload_weights))
             .await;
