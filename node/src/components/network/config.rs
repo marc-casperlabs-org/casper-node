@@ -32,6 +32,9 @@ const DEFAULT_MAX_ADDR_PENDING_TIME: TimeDiff = TimeDiff::from_seconds(60);
 /// Default timeout during which the handshake needs to be completed.
 const DEFAULT_HANDSHAKE_TIMEOUT: TimeDiff = TimeDiff::from_seconds(20);
 
+/// Default timeout during which the handshake needs to be completed.
+const DEFAULT_SYMMETRY_TIMEOUT: TimeDiff = TimeDiff::from_seconds(240);
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -44,6 +47,7 @@ impl Default for Config {
             initial_gossip_delay: DEFAULT_INITIAL_GOSSIP_DELAY,
             max_addr_pending_time: DEFAULT_MAX_ADDR_PENDING_TIME,
             handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
+            connection_symmetry_timeout: DEFAULT_SYMMETRY_TIMEOUT,
             max_incoming_peer_connections: 0,
             max_outgoing_byte_rate_non_validators: 0,
             max_incoming_message_rate_non_validators: 0,
@@ -96,6 +100,9 @@ pub struct Config {
     pub max_addr_pending_time: TimeDiff,
     /// Maximum allowed time for handshake completion.
     pub handshake_timeout: TimeDiff,
+    /// Maximum allowed time until a symmetric connection must be established (otherwise the
+    /// connection is terminated).
+    pub connection_symmetry_timeout: TimeDiff,
     /// Maximum number of incoming connections per unique peer. Unlimited if `0`.
     pub max_incoming_peer_connections: u16,
     /// Maximum number of bytes per second allowed for non-validating peers. Unlimited if 0.
