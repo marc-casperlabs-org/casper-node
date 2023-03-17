@@ -13,8 +13,6 @@ pub(super) struct Metrics {
     pub(super) broadcast_requests: IntCounter,
     /// How often a request to send a message directly to a peer was made.
     pub(super) direct_message_requests: IntCounter,
-    /// Number of messages still waiting to be sent out (broadcast and direct).
-    pub(super) queued_messages: IntGauge,
     /// Number of connected peers.
     pub(super) peers: IntGauge,
 
@@ -70,10 +68,6 @@ impl Metrics {
             "net_direct_message_requests",
             "number of requests to send a message directly to a peer",
         )?;
-        let queued_messages = IntGauge::new(
-            "net_queued_direct_messages",
-            "number of messages waiting to be sent out",
-        )?;
         let peers = IntGauge::new("peers", "number of connected peers")?;
 
         let out_state_connecting = IntGauge::new(
@@ -117,7 +111,6 @@ impl Metrics {
 
         registry.register(Box::new(broadcast_requests.clone()))?;
         registry.register(Box::new(direct_message_requests.clone()))?;
-        registry.register(Box::new(queued_messages.clone()))?;
         registry.register(Box::new(peers.clone()))?;
 
         registry.register(Box::new(out_state_connecting.clone()))?;
@@ -143,7 +136,6 @@ impl Metrics {
         Ok(Metrics {
             broadcast_requests,
             direct_message_requests,
-            queued_messages,
             peers,
 
             out_state_connecting,
@@ -181,7 +173,6 @@ impl Drop for Metrics {
     fn drop(&mut self) {
         unregister_metric!(self.registry, self.broadcast_requests);
         unregister_metric!(self.registry, self.direct_message_requests);
-        unregister_metric!(self.registry, self.queued_messages);
         unregister_metric!(self.registry, self.peers);
 
         unregister_metric!(self.registry, self.out_state_connecting);

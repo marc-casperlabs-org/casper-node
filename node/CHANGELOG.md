@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.  The format
 
 ### Changed
 
-* Metrics recording by message type has been replaced by a new set of metrics organized by channel type instead.
+* Metrics recording by message type and the `net_queued_direct_messages` metric have been replaced by a new set of metrics organized by channel type instead.
 
 ## [Unreleased]
 
