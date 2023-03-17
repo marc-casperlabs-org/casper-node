@@ -600,8 +600,9 @@ where
             .request_allowance(msg.payload_incoming_resource_estimate(&context.payload_weights))
             .await;
 
-        // Ensure the peer did not try to sneak in a message on a different channel.
-        // TODO: Verify we still need this.
+        // Ensure the peer did not try to sneak in a message on a different channel, e.g. by sending
+        // a gossip request on the network info channel.
+
         let msg_channel = msg.get_channel();
         if msg_channel != channel {
             return Err(MessageReaderError::WrongChannel {
