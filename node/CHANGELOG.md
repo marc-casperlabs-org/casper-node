@@ -15,6 +15,10 @@ All notable changes to this project will be documented in this file.  The format
 
 * Metrics recording by message type and the `net_queued_direct_messages` metric have been replaced by a new set of metrics organized by channel type instead.
 
+### Removed
+
+* The node no longer tracks individual messages across nodes across the networking level.
+
 ## [Unreleased]
 
 ### Added
