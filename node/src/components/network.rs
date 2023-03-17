@@ -122,10 +122,7 @@ use crate::{
     reactor::{Finalize, ReactorEvent},
     tls,
     types::{NodeId, ValidatorMatrix},
-    utils::{
-        self, display_error, DropSwitch, Fuse, LockedLineWriter, ObservableFuse, Source,
-        TokenizedCount,
-    },
+    utils::{self, display_error, DropSwitch, Fuse, LockedLineWriter, ObservableFuse, Source},
     NodeRng,
 };
 
@@ -507,17 +504,18 @@ where
             let encoded_size = payload.len();
             trace!(%msg, encoded_size, %channel, "enqueing message for sending");
 
-            let send_count_token = TokenizedCount::new(
-                self.net_metrics.channel_metrics[channel as usize]
-                    .buffer_count
-                    .clone(),
-                1,
-            );
+            let buffer_count = self.net_metrics.channel_metrics[channel as usize]
+                .buffer_count
+                .clone();
+            let buffer_bytes = self.net_metrics.channel_metrics[channel as usize]
+                .buffer_bytes
+                .clone();
 
             if let Err(refused_message) = sender.send(EncodedMessage::new(
                 payload,
                 opt_responder,
-                send_count_token,
+                buffer_count,
+                buffer_bytes,
             )) {
                 match deserialize_network_message::<P>(refused_message.0.payload()) {
                     Ok(reconstructed_message) => {

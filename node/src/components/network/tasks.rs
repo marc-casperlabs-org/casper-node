@@ -29,6 +29,7 @@ use openssl::{
     ssl::Ssl,
     x509::X509,
 };
+use prometheus::IntGauge;
 use serde::de::DeserializeOwned;
 use strum::{EnumCount, IntoEnumIterator};
 use tokio::{net::TcpStream, sync::mpsc::UnboundedReceiver};
@@ -79,9 +80,17 @@ pub(super) struct EncodedMessage {
     ///
     /// If `None`, the sender is not interested in knowing.
     send_finished: Option<AutoClosingResponder<()>>,
-    /// We track the number of messages still buffered in memory, the token ensures accurate
-    /// counts.
-    send_token: TokenizedCount,
+    /// We track the number and size of messages still buffered in memory, the token ensures
+    /// accurate counts.
+    send_tokens: SendTokens,
+}
+
+#[derive(Debug)]
+struct SendTokens {
+    /// Message count increase/decrease.
+    _count: TokenizedCount,
+    /// Message size increase/decrease.
+    _bytes: TokenizedCount,
 }
 
 impl EncodedMessage {
@@ -89,18 +98,30 @@ impl EncodedMessage {
     pub(super) fn new(
         payload: Bytes,
         send_finished: Option<AutoClosingResponder<()>>,
-        send_token: TokenizedCount,
+        count: IntGauge,
+        bytes: IntGauge,
     ) -> Self {
+        // let payload_size = payload.len();
         Self {
+            send_tokens: SendTokens::new(payload.len(), count, bytes),
             payload,
             send_finished,
-            send_token,
         }
     }
 
     /// Get the encoded message's payload.
     pub(super) fn payload(&self) -> &Bytes {
         &self.payload
+    }
+}
+
+impl SendTokens {
+    /// Constructs a new set of send tokens for a given payload size.
+    fn new(payload_size: usize, count: IntGauge, bytes: IntGauge) -> Self {
+        SendTokens {
+            _count: TokenizedCount::new(count, 1),
+            _bytes: TokenizedCount::new(bytes, payload_size as i64),
+        }
     }
 }
 
@@ -732,7 +753,7 @@ where
             Either::Left(Some(EncodedMessage {
                 payload: data,
                 send_finished,
-                send_token,
+                send_tokens,
             })) => {
                 let encoded_size = data.len();
                 let has_responder = send_finished.is_some();
@@ -755,7 +776,7 @@ where
 
                 trace!(%channel, encoded_size, has_responder, "finished sending payload");
                 // We only drop the token once the message is sent or at least buffered.
-                drop(send_token);
+                drop(send_tokens);
             }
             Either::Left(None) => {
                 trace!("sink closed");
