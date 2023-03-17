@@ -48,6 +48,7 @@ use super::{
     event::{IncomingConnection, OutgoingConnection},
     limiter::LimiterHandle,
     message::NodeKeyPair,
+    metrics::ChannelMetrics,
     Channel, EstimatorWeights, Event, FromIncoming, Identity, IncomingAckCarrier, IncomingCarrier,
     IncomingChannel, Message, Metrics, OutgoingAckCarrier, OutgoingAckChannel, OutgoingCarrier,
     OutgoingChannel, OutgoingChannelError, Payload, Transport, BACKPRESSURE_WINDOW_SIZE,
@@ -640,6 +641,7 @@ pub(super) async fn encoded_message_sender(
     carrier: OutgoingCarrier,
     ack_carrier: Arc<Mutex<IncomingAckCarrier>>,
     limiter: LimiterHandle,
+    all_channel_metrics: [ChannelMetrics; Channel::COUNT],
 ) -> Result<(), OutgoingChannelError> {
     // TODO: Once the necessary methods are stabilized, setup const fns to initialize
     // `MESSAGE_FRAGMENT_SIZE` as a `NonZeroUsize` directly.
@@ -648,7 +650,10 @@ pub(super) async fn encoded_message_sender(
 
     let mut boiler_room = FuturesUnordered::new();
 
-    for (channel, queue) in Channel::iter().zip(IntoIterator::into_iter(queues)) {
+    for ((channel, queue), channel_metrics) in Channel::iter()
+        .zip(IntoIterator::into_iter(queues))
+        .zip(IntoIterator::into_iter(all_channel_metrics))
+    {
         let mux_handle = carrier.create_channel_handle(channel as u8);
 
         // Note: We use `Infallibe` here, since we do not care about the actual API.
@@ -671,6 +676,7 @@ pub(super) async fn encoded_message_sender(
             outgoing,
             local_stop.clone(),
             limiter.clone(),
+            channel_metrics,
         ));
     }
 
@@ -703,6 +709,7 @@ async fn shovel_data<S>(
     mut dest: S,
     stop: ObservableFuse,
     limiter: LimiterHandle,
+    channel_metrics: ChannelMetrics,
 ) -> Result<(), <S as Sink<Bytes>>::Error>
 where
     S: Sink<Bytes> + Unpin,
@@ -731,6 +738,10 @@ where
                 //       traffic, so the extra flush is the lesser of two evils until we implement
                 //       and leverage a multi-message sending API.
                 dest.send(data).await?;
+
+                channel_metrics.sent_count.inc();
+                channel_metrics.sent_bytes.inc_by(encoded_size as u64);
+
                 if let Some(responder) = send_finished {
                     responder.respond(()).await;
                 }

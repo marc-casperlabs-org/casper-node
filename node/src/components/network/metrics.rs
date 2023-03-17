@@ -45,13 +45,13 @@ pub(super) struct Metrics {
 #[derive(Debug, Clone)]
 pub(super) struct ChannelMetrics {
     /// Number of messages waiting in the internal queue.
-    buffer_count: IntGauge,
+    pub(super) buffer_count: IntGauge,
     /// Number of bytes waiting in the internal queue.
-    buffer_size: IntGauge,
+    pub(super) buffer_bytes: IntGauge,
     /// Number of messages pushed to active sink.
-    sent_count: IntCounter,
+    pub(super) sent_count: IntCounter,
     /// Number of bytes pushed to active sink.
-    sent_size: IntCounter,
+    pub(super) sent_bytes: IntCounter,
 }
 
 impl Metrics {
@@ -197,8 +197,8 @@ impl ChannelMetrics {
             format!("number of messages buffered on channel {}", channel),
         )?;
 
-        let buffer_size = IntGauge::new(
-            format!("net_chan_{}_buffer_size", lowercase_channel),
+        let buffer_bytes = IntGauge::new(
+            format!("net_chan_{}_buffer_bytes", lowercase_channel),
             format!("number of payload bytes buffered on channel {}", channel),
         )?;
 
@@ -207,21 +207,21 @@ impl ChannelMetrics {
             format!("number of messages sent on channel {}", channel),
         )?;
 
-        let sent_size = IntCounter::new(
+        let sent_bytes = IntCounter::new(
             format!("net_chan_{}_sent_size", lowercase_channel),
             format!("number of payload bytes sent on channel {}", channel),
         )?;
 
         registry.register(Box::new(buffer_count.clone()))?;
-        registry.register(Box::new(buffer_size.clone()))?;
+        registry.register(Box::new(buffer_bytes.clone()))?;
         registry.register(Box::new(sent_count.clone()))?;
-        registry.register(Box::new(sent_size.clone()))?;
+        registry.register(Box::new(sent_bytes.clone()))?;
 
         Ok(ChannelMetrics {
             buffer_count,
-            buffer_size,
+            buffer_bytes: buffer_bytes,
             sent_count,
-            sent_size,
+            sent_bytes,
         })
     }
 }

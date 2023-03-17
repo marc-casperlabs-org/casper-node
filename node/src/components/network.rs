@@ -504,7 +504,8 @@ where
                 // The `AutoClosingResponder` will respond by itself.
                 return;
             };
-            trace!(%msg, encoded_size=payload.len(), %channel, "enqueing message for sending");
+            let encoded_size = payload.len();
+            trace!(%msg, encoded_size, %channel, "enqueing message for sending");
 
             let send_token = TokenizedCount::new(self.net_metrics.queued_messages.clone());
 
@@ -525,6 +526,14 @@ where
                         );
                     }
                 }
+            } else {
+                // Successfully enqueued message, update metrics.
+                self.net_metrics.channel_metrics[channel as usize]
+                    .buffer_count
+                    .inc();
+                self.net_metrics.channel_metrics[channel as usize]
+                    .buffer_bytes
+                    .add(encoded_size as i64);
             }
         } else {
             // We are not connected, so the reconnection is likely already in progress.
@@ -852,6 +861,7 @@ where
                         ack_carrier,
                         self.outgoing_limiter
                             .create_handle(peer_id, peer_consensus_public_key),
+                        self.net_metrics.channel_metrics.clone(),
                     )
                     .instrument(span)
                     .event(move |_| Event::OutgoingDropped {
