@@ -9,6 +9,12 @@ All notable changes to this project will be documented in this file.  The format
 [comment]: <> (Fixed:      any bug fixes)
 [comment]: <> (Security:   in case of vulnerabilities)
 
+## [Unreleased-NEXT]
+
+### Changed
+
+* Metrics recording by message type has been replaced by a new set of metrics organized by channel type instead.
+
 ## [Unreleased]
 
 ### Added
@@ -116,6 +122,7 @@ All notable changes to this project will be documented in this file.  The format
 * JSON-RPC server is now mostly compliant with the standard. Specifically, correct error values are now returned in responses in many failure cases.
 
 ### Security
+
 * OpenSSL has been bumped to version 1.1.1.t, if compiling with vendored OpenSSL to address [RUSTSEC-2022-0014](https://rustsec.org/advisories/RUSTSEC-2022-0014), [RUSTSEC-2023-0006](https://rustsec.org/advisories/RUSTSEC-2023-0006), [RUSTSEC-2023-0007](https://rustsec.org/advisories/RUSTSEC-2023-0007), [RUSTSEC-2023-0009](https://rustsec.org/advisories/RUSTSEC-2023-0009) and [RUSTSEC-2023-0010](https://rustsec.org/advisories/RUSTSEC-2023-0010).
 
 ## 1.4.8
