@@ -507,11 +507,18 @@ where
             let encoded_size = payload.len();
             trace!(%msg, encoded_size, %channel, "enqueing message for sending");
 
-            let send_token = TokenizedCount::new(self.net_metrics.queued_messages.clone());
+            let send_count_token = TokenizedCount::new(
+                self.net_metrics.channel_metrics[channel as usize]
+                    .buffer_count
+                    .clone(),
+                1,
+            );
 
-            if let Err(refused_message) =
-                sender.send(EncodedMessage::new(payload, opt_responder, send_token))
-            {
+            if let Err(refused_message) = sender.send(EncodedMessage::new(
+                payload,
+                opt_responder,
+                send_count_token,
+            )) {
                 match deserialize_network_message::<P>(refused_message.0.payload()) {
                     Ok(reconstructed_message) => {
                         // We lost the connection, but that fact has not reached us as an event yet.

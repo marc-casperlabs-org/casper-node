@@ -158,27 +158,31 @@ pub(crate) fn leak<T>(value: T) -> &'static T {
 
 /// An "unlimited semaphore".
 ///
-/// Upon construction, `TokenizedCount` increases a given `IntGauge` by one for metrics purposed.
-///
-/// Once it is dropped, the underlying gauge will be decreased by one.
+/// Upon construction, `TokenizedCount` increases a given `IntGauge` by a set amount for metrics
+/// purposes. Once it is dropped, the underlying gauge will be decreased by the same amount.
 #[derive(Debug)]
 pub(crate) struct TokenizedCount {
     /// The gauge modified on construction/drop.
     gauge: Option<IntGauge>,
+    /// The amount to alter the gauge by.
+    amount: i64,
 }
 
 impl TokenizedCount {
     /// Create a new tokenized count, increasing the given gauge.
-    pub(crate) fn new(gauge: IntGauge) -> Self {
-        gauge.inc();
-        TokenizedCount { gauge: Some(gauge) }
+    pub(crate) fn new(gauge: IntGauge, by: i64) -> Self {
+        gauge.add(by);
+        TokenizedCount {
+            gauge: Some(gauge),
+            amount: by,
+        }
     }
 }
 
 impl Drop for TokenizedCount {
     fn drop(&mut self) {
         if let Some(gauge) = self.gauge.take() {
-            gauge.dec();
+            gauge.sub(self.amount);
         }
     }
 }
@@ -562,10 +566,10 @@ mod tests {
         gauge.inc();
         assert_eq!(gauge.get(), 2);
 
-        let ticket1 = TokenizedCount::new(gauge.clone());
-        let ticket2 = TokenizedCount::new(gauge.clone());
+        let ticket1 = TokenizedCount::new(gauge.clone(), 1);
+        let ticket2 = TokenizedCount::new(gauge.clone(), 2);
 
-        assert_eq!(gauge.get(), 4);
+        assert_eq!(gauge.get(), 5);
         drop(ticket2);
         assert_eq!(gauge.get(), 3);
         drop(ticket1);
