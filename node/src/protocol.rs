@@ -155,7 +155,7 @@ impl Payload for Message {
             } => match tag {
                 Tag::Deploy => Channel::DataRequests,
                 Tag::LegacyDeploy => Channel::SyncDataRequests,
-                Tag::Block => Channel::DataRequests,
+                Tag::Block => Channel::SyncDataRequests,
                 Tag::BlockHeader => Channel::DataRequests,
                 Tag::TrieOrChunk => Channel::SyncDataRequests,
                 Tag::FinalitySignature => Channel::DataRequests,
@@ -167,10 +167,9 @@ impl Payload for Message {
                 tag,
                 serialized_item: _,
             } => match tag {
-                // TODO: Verify which responses are for sync data.
                 Tag::Deploy => Channel::DataResponses,
                 Tag::LegacyDeploy => Channel::SyncDataResponses,
-                Tag::Block => Channel::DataResponses,
+                Tag::Block => Channel::SyncDataResponses,
                 Tag::BlockHeader => Channel::DataResponses,
                 Tag::TrieOrChunk => Channel::SyncDataResponses,
                 Tag::FinalitySignature => Channel::DataResponses,
