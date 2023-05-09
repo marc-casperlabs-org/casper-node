@@ -6,7 +6,6 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use datasize::DataSize;
 use hex_fmt::HexFmt;
 use itertools::Itertools;
@@ -42,9 +41,7 @@ use crate::{
     NodeRng,
 };
 
-#[derive(
-    Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize, DataSize, Default, FromBytes, ToBytes,
-)]
+#[derive(Eq, PartialEq, Clone, Debug, Hash, Serialize, Deserialize, DataSize, Default)]
 pub(crate) struct ConsensusValue(Vec<u8>);
 
 impl ConsensusValueT for ConsensusValue {
@@ -1010,20 +1007,7 @@ pub(crate) struct TestSecret(pub(crate) u64);
 
 // Newtype wrapper for test signature.
 // Added so that we can use custom Debug impl.
-#[derive(
-    Clone,
-    DataSize,
-    Copy,
-    Hash,
-    PartialOrd,
-    Ord,
-    Eq,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    FromBytes,
-    ToBytes,
-)]
+#[derive(Clone, DataSize, Copy, Hash, PartialOrd, Ord, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SignatureWrapper(u64);
 
 impl Debug for SignatureWrapper {
@@ -1034,20 +1018,7 @@ impl Debug for SignatureWrapper {
 
 // Newtype wrapper for test hash.
 // Added so that we can use custom Debug impl.
-#[derive(
-    Clone,
-    Copy,
-    DataSize,
-    Hash,
-    Ord,
-    PartialOrd,
-    Eq,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    FromBytes,
-    ToBytes,
-)]
+#[derive(Clone, Copy, DataSize, Hash, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct HashWrapper(u64);
 
 impl Debug for HashWrapper {

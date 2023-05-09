@@ -3,7 +3,6 @@ use std::{
     net::SocketAddr,
 };
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use datasize::DataSize;
 use serde::{Deserialize, Serialize};
 
@@ -14,19 +13,7 @@ use crate::{
 
 /// Used to gossip our public listening address to peers.
 #[derive(
-    Copy,
-    Clone,
-    DataSize,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    Debug,
-    FromBytes,
-    ToBytes,
+    Copy, Clone, DataSize, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Debug,
 )]
 pub struct GossipedAddress(SocketAddr);
 

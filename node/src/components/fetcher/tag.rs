@@ -1,6 +1,5 @@
 use std::hash::Hash;
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use datasize::DataSize;
 use derive_more::Display;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -20,8 +19,6 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Deserialize_repr,
     Debug,
     Display,
-    FromBytes,
-    ToBytes,
 )]
 #[repr(u8)]
 pub enum Tag {

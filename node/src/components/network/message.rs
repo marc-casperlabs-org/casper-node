@@ -4,14 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use casper_hashing::Digest;
 #[cfg(test)]
 use casper_types::testing::TestRng;
-use casper_types::{
-    bytesrepr::{FromBytes, ToBytes},
-    crypto, AsymmetricType, ProtocolVersion, PublicKey, SecretKey, Signature,
-};
+use casper_types::{crypto, AsymmetricType, ProtocolVersion, PublicKey, SecretKey, Signature};
 use datasize::DataSize;
 use futures::future::BoxFuture;
 use serde::{
@@ -30,7 +26,7 @@ fn default_protocol_version() -> ProtocolVersion {
     ProtocolVersion::V1_0_0
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, FromBytes, ToBytes)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Message<P> {
     Handshake {
@@ -160,7 +156,7 @@ impl NodeKeyPair {
 /// Note that this type has custom `Serialize` and `Deserialize` implementations to allow the
 /// `public_key` and `signature` fields to be encoded to all-lowercase hex, hence circumventing the
 /// checksummed-hex encoding used by `PublicKey` and `Signature` in versions 1.4.2 and 1.4.3.
-#[derive(Clone, Debug, Eq, PartialEq, FromBytes, ToBytes)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ConsensusCertificate {
     public_key: PublicKey,
     signature: Signature,
@@ -392,17 +388,7 @@ pub enum Channel {
 /// Payloads are what is transferred across the network outside of control messages from the
 /// networking component itself.
 pub(crate) trait Payload:
-    Serialize
-    + DeserializeOwned
-    + Clone
-    + Debug
-    + Display
-    + Send
-    + Sync
-    + Unpin
-    + FromBytes
-    + ToBytes
-    + 'static
+    Serialize + DeserializeOwned + Clone + Debug + Display + Send + Sync + Unpin + 'static
 {
     /// Classifies the payload based on its contents.
     fn message_kind(&self) -> MessageKind;

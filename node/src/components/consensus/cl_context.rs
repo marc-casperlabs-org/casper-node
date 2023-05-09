@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use datasize::DataSize;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -56,23 +55,7 @@ impl ConsensusValueT for Arc<BlockPayload> {
 }
 
 /// The collection of types used for cryptography, IDs and blocks in the CasperLabs node.
-// Note: Serialization/Deserialization traits like `Serialize` and `FromBytes` are not needed since
-//       this type is never actually instantiated, but are included as common derive macros
-//       typically add a trait bound with this requirement to generic types.
-#[derive(
-    Clone,
-    DataSize,
-    Debug,
-    Deserialize,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    ToBytes,
-    FromBytes,
-)]
+#[derive(Clone, DataSize, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub(crate) struct ClContext;
 
 impl Context for ClContext {

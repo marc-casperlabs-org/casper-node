@@ -10,7 +10,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytesrepr_derive::{FromBytes, ToBytes};
 use derive_more::From;
 use futures::FutureExt;
 use prometheus::Registry;
@@ -139,7 +138,7 @@ impl Display for Event {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, From, FromBytes, ToBytes)]
+#[derive(Clone, Debug, Deserialize, Serialize, From)]
 enum Message {
     #[from]
     AddressGossiper(gossiper::Message<GossipedAddress>),

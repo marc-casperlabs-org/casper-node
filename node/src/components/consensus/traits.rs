@@ -3,7 +3,6 @@ use std::{
     hash::Hash,
 };
 
-use casper_types::bytesrepr::{FromBytes, ToBytes};
 use datasize::DataSize;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -14,18 +13,7 @@ impl<VID> ValidatorIdT for VID where VID: Eq + Ord + Clone + Debug + Hash + Send
 
 /// The consensus value type, e.g. a list of transactions.
 pub trait ConsensusValueT:
-    Eq
-    + Clone
-    + Debug
-    + Display
-    + Hash
-    + Serialize
-    + DeserializeOwned
-    + Send
-    + DataSize
-    // TODO: Actually put these bounds elsewhere, see `serde(bounds)` for comparison
-    + ToBytes
-    + FromBytes
+    Eq + Clone + Debug + Display + Hash + Serialize + DeserializeOwned + Send + DataSize
 {
     /// Returns whether the consensus value needs validation.
     fn needs_validation(&self) -> bool;
@@ -33,19 +21,7 @@ pub trait ConsensusValueT:
 
 /// A hash, as an identifier for a block or unit.
 pub trait HashT:
-    Eq
-    + Ord
-    + Copy
-    + Clone
-    + DataSize
-    + Debug
-    + Display
-    + Hash
-    + Serialize
-    + DeserializeOwned
-    + ToBytes
-    + FromBytes
-    + Send
+    Eq + Ord + Copy + Clone + DataSize + Debug + Display + Hash + Serialize + DeserializeOwned + Send
 {
 }
 impl<H> HashT for H where
@@ -59,8 +35,6 @@ impl<H> HashT for H where
         + Hash
         + Serialize
         + DeserializeOwned
-        + ToBytes
-        + FromBytes
         + Send
 {
 }
@@ -92,8 +66,6 @@ pub trait Context: Clone + DataSize + Debug + Eq + Ord + Hash + Send {
         + Hash
         + Serialize
         + DeserializeOwned
-        + FromBytes
-        + ToBytes
         + Send
         + DataSize;
     /// Unique identifiers for units.
