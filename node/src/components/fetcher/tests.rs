@@ -32,7 +32,7 @@ use crate::{
             NetRequestIncoming, NetResponse, NetResponseIncoming, TrieDemand, TrieRequestIncoming,
             TrieResponseIncoming,
         },
-        requests::BlockCompleteConfirmationRequest,
+        requests::MarkBlockCompletedRequest,
         Responder,
     },
     fatal,
@@ -104,9 +104,15 @@ enum Event {
     #[from]
     FetcherRequestDeploy(FetcherRequest<Deploy>),
     #[from]
+    BlockAccumulatorRequest(BlockAccumulatorRequest),
+    #[from]
     DeployAcceptorAnnouncement(DeployAcceptorAnnouncement),
     #[from]
     RpcServerAnnouncement(RpcServerAnnouncement),
+    #[from]
+    FetchedNewFinalitySignatureAnnouncement(FetchedNewFinalitySignatureAnnouncement),
+    #[from]
+    FetchedNewBlockAnnouncement(FetchedNewBlockAnnouncement),
     #[from]
     NetRequestIncoming(NetRequestIncoming),
     #[from]
@@ -114,7 +120,7 @@ enum Event {
     #[from]
     BlocklistAnnouncement(PeerBehaviorAnnouncement),
     #[from]
-    MarkBlockCompletedRequest(BlockCompleteConfirmationRequest),
+    MarkBlockCompletedRequest(MarkBlockCompletedRequest),
     #[from]
     TrieDemand(TrieDemand),
     #[from]
@@ -238,6 +244,7 @@ impl ReactorTrait for Reactor {
             ),
             Event::TrieDemand(_)
             | Event::ContractRuntimeRequest(_)
+            | Event::BlockAccumulatorRequest(_)
             | Event::BlocklistAnnouncement(_)
             | Event::GossiperIncomingDeploy(_)
             | Event::GossiperIncomingBlock(_)
@@ -248,6 +255,8 @@ impl ReactorTrait for Reactor {
             | Event::ConsensusMessageIncoming(_)
             | Event::ConsensusDemandIncoming(_)
             | Event::FinalitySignatureIncoming(_)
+            | Event::FetchedNewBlockAnnouncement(_)
+            | Event::FetchedNewFinalitySignatureAnnouncement(_)
             | Event::ControlAnnouncement(_)
             | Event::FatalAnnouncement(_) => panic!("unexpected: {}", event),
         }
@@ -266,9 +275,9 @@ impl ReactorTrait for Reactor {
 
         let storage = Storage::new(
             &WithDir::new(cfg.temp_dir.path(), cfg.storage_config),
-            chainspec.core_config.finality_threshold_fraction,
             chainspec.hard_reset_to_start_of_era(),
             chainspec.protocol_config.version,
+            chainspec.protocol_config.activation_point.era_id(),
             &chainspec.network_config.name,
             chainspec.deploy_config.max_ttl,
             chainspec.core_config.unbonding_delay,
@@ -297,7 +306,7 @@ impl Reactor {
         rng: &mut NodeRng,
         response: NetResponseIncoming,
     ) -> Effects<Event> {
-        match response.message {
+        match *response.message {
             NetResponse::Deploy(ref serialized_item) => {
                 let deploy = match bincode::deserialize::<FetchResponse<Deploy, DeployHash>>(
                     serialized_item,
@@ -377,7 +386,7 @@ fn fetch_deploy(
 ) -> impl FnOnce(EffectBuilder<Event>) -> Effects<Event> {
     move |effect_builder: EffectBuilder<Event>| {
         effect_builder
-            .fetch::<Deploy>(deploy_id, node_id, EmptyValidationMetadata)
+            .fetch::<Deploy>(deploy_id, node_id, Box::new(EmptyValidationMetadata))
             .then(move |deploy| async move {
                 let mut result = fetched.lock().unwrap();
                 result.0 = true;

@@ -9,10 +9,10 @@ use async_trait::async_trait;
 use once_cell::sync::Lazy;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use casper_execution_engine::{
-    core::engine_state::{BalanceResult, GetBidsResult, QueryResult},
+    core::engine_state::{self, BalanceResult, GetBidsResult, QueryResult},
     storage::trie::merkle_proof::TrieMerkleProof,
 };
 use casper_hashing::Digest;
@@ -143,7 +143,7 @@ pub struct GetItemParams {
 
 impl DocExample for GetItemParams {
     fn doc_example() -> &'static Self {
-        &*GET_ITEM_PARAMS
+        &GET_ITEM_PARAMS
     }
 }
 
@@ -162,7 +162,7 @@ pub struct GetItemResult {
 
 impl DocExample for GetItemResult {
     fn doc_example() -> &'static Self {
-        &*GET_ITEM_RESULT
+        &GET_ITEM_RESULT
     }
 }
 
@@ -221,7 +221,7 @@ pub struct GetBalanceParams {
 
 impl DocExample for GetBalanceParams {
     fn doc_example() -> &'static Self {
-        &*GET_BALANCE_PARAMS
+        &GET_BALANCE_PARAMS
     }
 }
 
@@ -240,7 +240,7 @@ pub struct GetBalanceResult {
 
 impl DocExample for GetBalanceResult {
     fn doc_example() -> &'static Self {
-        &*GET_BALANCE_RESULT
+        &GET_BALANCE_RESULT
     }
 }
 
@@ -333,7 +333,7 @@ pub struct GetAuctionInfoParams {
 
 impl DocExample for GetAuctionInfoParams {
     fn doc_example() -> &'static Self {
-        &*GET_AUCTION_INFO_PARAMS
+        &GET_AUCTION_INFO_PARAMS
     }
 }
 
@@ -350,7 +350,7 @@ pub struct GetAuctionInfoResult {
 
 impl DocExample for GetAuctionInfoResult {
     fn doc_example() -> &'static Self {
-        &*GET_AUCTION_INFO_RESULT
+        &GET_AUCTION_INFO_RESULT
     }
 }
 
@@ -478,7 +478,7 @@ pub struct GetAccountInfoParams {
 
 impl DocExample for GetAccountInfoParams {
     fn doc_example() -> &'static Self {
-        &*GET_ACCOUNT_INFO_PARAMS
+        &GET_ACCOUNT_INFO_PARAMS
     }
 }
 
@@ -497,7 +497,7 @@ pub struct GetAccountInfoResult {
 
 impl DocExample for GetAccountInfoResult {
     fn doc_example() -> &'static Self {
-        &*GET_ACCOUNT_INFO_RESULT
+        &GET_ACCOUNT_INFO_RESULT
     }
 }
 
@@ -675,7 +675,7 @@ pub struct GetDictionaryItemParams {
 
 impl DocExample for GetDictionaryItemParams {
     fn doc_example() -> &'static Self {
-        &*GET_DICTIONARY_ITEM_PARAMS
+        &GET_DICTIONARY_ITEM_PARAMS
     }
 }
 
@@ -696,7 +696,7 @@ pub struct GetDictionaryItemResult {
 
 impl DocExample for GetDictionaryItemResult {
     fn doc_example() -> &'static Self {
-        &*GET_DICTIONARY_ITEM_RESULT
+        &GET_DICTIONARY_ITEM_RESULT
     }
 }
 
@@ -784,7 +784,7 @@ pub struct QueryGlobalStateParams {
 
 impl DocExample for QueryGlobalStateParams {
     fn doc_example() -> &'static Self {
-        &*QUERY_GLOBAL_STATE_PARAMS
+        &QUERY_GLOBAL_STATE_PARAMS
     }
 }
 
@@ -805,7 +805,7 @@ pub struct QueryGlobalStateResult {
 
 impl DocExample for QueryGlobalStateResult {
     fn doc_example() -> &'static Self {
-        &*QUERY_GLOBAL_STATE_RESULT
+        &QUERY_GLOBAL_STATE_RESULT
     }
 }
 
@@ -875,7 +875,7 @@ pub struct QueryBalanceParams {
 
 impl DocExample for QueryBalanceParams {
     fn doc_example() -> &'static Self {
-        &*QUERY_BALANCE_PARAMS
+        &QUERY_BALANCE_PARAMS
     }
 }
 
@@ -891,7 +891,7 @@ pub struct QueryBalanceResult {
 
 impl DocExample for QueryBalanceResult {
     fn doc_example() -> &'static Self {
-        &*QUERY_BALANCE_RESULT
+        &QUERY_BALANCE_RESULT
     }
 }
 
@@ -1001,7 +1001,7 @@ pub struct GetTrieParams {
 
 impl DocExample for GetTrieParams {
     fn doc_example() -> &'static Self {
-        &*GET_TRIE_PARAMS
+        &GET_TRIE_PARAMS
     }
 }
 
@@ -1022,7 +1022,7 @@ pub struct GetTrieResult {
 
 impl DocExample for GetTrieResult {
     fn doc_example() -> &'static Self {
-        &*GET_TRIE_RESULT
+        &GET_TRIE_RESULT
     }
 }
 
@@ -1088,6 +1088,16 @@ pub(super) async fn run_query<REv: ReactorEventT>(
         )
         .await;
 
+    handle_query_result(effect_builder, state_root_hash, query_result).await
+}
+
+/// Converts the result of running a global state query into a type suitable for including in a
+/// JSON-RPC response.
+pub(super) async fn handle_query_result<REv: ReactorEventT>(
+    effect_builder: EffectBuilder<REv>,
+    state_root_hash: Digest,
+    query_result: Result<QueryResult, engine_state::Error>,
+) -> Result<QuerySuccess, Error> {
     match query_result {
         Ok(QueryResult::Success { value, proofs }) => Ok((*value, proofs)),
         Ok(QueryResult::RootNotFound) => {
@@ -1101,7 +1111,7 @@ pub(super) async fn run_query<REv: ReactorEventT>(
             Err(error)
         }
         Ok(query_result) => {
-            info!(?query_result, "query failed");
+            debug!(?query_result, "query failed");
             Err(Error::new(
                 ErrorCode::QueryFailed,
                 format!("{:?}", query_result),

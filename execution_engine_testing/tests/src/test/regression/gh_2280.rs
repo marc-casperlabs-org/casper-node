@@ -713,7 +713,7 @@ struct TestContext {
 
 fn setup() -> (InMemoryWasmTestBuilder, TestContext) {
     let mut builder = InMemoryWasmTestBuilder::default();
-    builder.run_genesis(&*PRODUCTION_RUN_GENESIS_REQUEST);
+    builder.run_genesis(&PRODUCTION_RUN_GENESIS_REQUEST);
 
     let session_args = runtime_args! {
         mint::ARG_AMOUNT => U512::from(MINIMUM_ACCOUNT_CREATION_BALANCE),
@@ -761,6 +761,7 @@ fn make_engine_config(
         DEFAULT_MINIMUM_DELEGATION_AMOUNT,
         DEFAULT_STRICT_ARGUMENT_CHECKING,
         DEFAULT_VESTING_SCHEDULE_LENGTH_MILLIS,
+        None,
         new_wasm_config,
         new_system_config,
     )

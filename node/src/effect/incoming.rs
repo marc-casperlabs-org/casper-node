@@ -8,6 +8,7 @@ use std::{
 };
 
 use datasize::DataSize;
+use muxink::backpressured::Ticket;
 use serde::Serialize;
 
 use crate::{
@@ -18,11 +19,13 @@ use crate::{
 
 use super::AutoClosingResponder;
 
-/// An envelope for an incoming message, attaching a sender address.
+/// An envelope for an incoming message, attaching a sender address and a backpressure ticket.
 #[derive(DataSize, Debug, Serialize)]
 pub struct MessageIncoming<M> {
     pub(crate) sender: NodeId,
-    pub(crate) message: M,
+    pub(crate) message: Box<M>,
+    #[serde(skip)]
+    pub(crate) ticket: Arc<Ticket>,
 }
 
 impl<M> Display for MessageIncoming<M>
@@ -40,7 +43,7 @@ pub struct DemandIncoming<M> {
     /// The sender from which the demand originated.
     pub(crate) sender: NodeId,
     /// The wrapped demand.
-    pub(crate) request_msg: M,
+    pub(crate) request_msg: Box<M>,
     /// Responder to send the answer down through.
     pub(crate) auto_closing_responder: AutoClosingResponder<Message>,
 }
@@ -79,7 +82,7 @@ pub(crate) type ConsensusDemand = DemandIncoming<consensus::ConsensusRequestMess
 pub(crate) type TrieResponseIncoming = MessageIncoming<TrieResponse>;
 
 /// A new finality signature arrived over the network.
-pub(crate) type FinalitySignatureIncoming = MessageIncoming<Box<FinalitySignature>>;
+pub(crate) type FinalitySignatureIncoming = MessageIncoming<FinalitySignature>;
 
 /// A request for an object out of storage arrived.
 ///

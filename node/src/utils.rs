@@ -8,8 +8,10 @@ mod external;
 pub(crate) mod fmt_limit;
 mod fuse;
 pub(crate) mod opt_display;
+pub(crate) mod registered_metric;
 pub(crate) mod rlimit;
 pub(crate) mod round_robin;
+pub(crate) mod specimen;
 pub(crate) mod umask;
 pub mod work_queue;
 
@@ -31,7 +33,7 @@ use fs2::FileExt;
 use futures::future::Either;
 use hyper::server::{conn::AddrIncoming, Builder, Server};
 
-use prometheus::{self, Histogram, HistogramOpts, IntGauge, Registry};
+use prometheus::{self, IntGauge};
 use serde::Serialize;
 use thiserror::Error;
 use tracing::{error, warn};
@@ -39,12 +41,13 @@ use tracing::{error, warn};
 use crate::types::NodeId;
 pub(crate) use block_signatures::{check_sufficient_block_signatures, BlockSignatureError};
 pub(crate) use display_error::display_error;
-pub(crate) use external::External;
 #[cfg(test)]
 pub(crate) use external::RESOURCES_PATH;
-pub use external::{LoadError, Loadable};
+pub use external::{External, LoadError, Loadable};
 pub(crate) use fuse::{DropSwitch, Fuse, ObservableFuse, SharedFuse};
 pub(crate) use round_robin::WeightedRoundRobin;
+#[cfg(test)]
+pub(crate) use tests::extract_metric_names;
 
 /// DNS resolution error.
 #[derive(Debug, Error)]
@@ -317,34 +320,6 @@ where
     (numerator + denominator / T::from(2)) / denominator
 }
 
-/// Creates a prometheus Histogram and registers it.
-pub(crate) fn register_histogram_metric(
-    registry: &Registry,
-    metric_name: &str,
-    metric_help: &str,
-    buckets: Vec<f64>,
-) -> Result<Histogram, prometheus::Error> {
-    let histogram_opts = HistogramOpts::new(metric_name, metric_help).buckets(buckets);
-    let histogram = Histogram::with_opts(histogram_opts)?;
-    registry.register(Box::new(histogram.clone()))?;
-    Ok(histogram)
-}
-
-/// Unregisters a metric from the Prometheus registry.
-#[macro_export]
-macro_rules! unregister_metric {
-    ($registry:expr, $metric:expr) => {
-        $registry
-            .unregister(Box::new($metric.clone()))
-            .unwrap_or_else(|_| {
-                tracing::error!(
-                    "unregistering {} failed: was not registered",
-                    stringify!($metric)
-                )
-            });
-    };
-}
-
 /// XORs two byte sequences.
 ///
 /// # Panics
@@ -492,11 +467,28 @@ impl<A, B, F, G> Peel for Either<(A, G), (B, F)> {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Duration};
+    use std::{collections::HashSet, sync::Arc, time::Duration};
 
     use prometheus::IntGauge;
 
     use super::{wait_for_arc_drop, xor, TokenizedCount};
+
+    /// Extracts the names of all metrics contained in a prometheus-formatted metrics snapshot.
+
+    pub(crate) fn extract_metric_names(raw: &str) -> HashSet<&str> {
+        raw.lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    None
+                } else {
+                    let (full_id, _) = trimmed.split_once(' ')?;
+                    let id = full_id.split_once('{').map(|v| v.0).unwrap_or(full_id);
+                    Some(id)
+                }
+            })
+            .collect()
+    }
 
     #[test]
     fn xor_works() {
@@ -570,5 +562,35 @@ mod tests {
         assert_eq!(gauge.get(), 3);
         drop(ticket1);
         assert_eq!(gauge.get(), 2);
+    }
+
+    #[test]
+    fn can_parse_metrics() {
+        let sample = r#"
+        chain_height 0
+        # HELP consensus_current_era the current era in consensus
+        # TYPE consensus_current_era gauge
+        consensus_current_era 0
+        # HELP consumed_ram_bytes total consumed ram in bytes
+        # TYPE consumed_ram_bytes gauge
+        consumed_ram_bytes 0
+        # HELP contract_runtime_apply_commit time in seconds to commit the execution effects of a contract
+        # TYPE contract_runtime_apply_commit histogram
+        contract_runtime_apply_commit_bucket{le="0.01"} 0
+        contract_runtime_apply_commit_bucket{le="0.02"} 0
+        contract_runtime_apply_commit_bucket{le="0.04"} 0
+        contract_runtime_apply_commit_bucket{le="0.08"} 0
+        contract_runtime_apply_commit_bucket{le="0.16"} 0
+        "#;
+
+        let extracted = extract_metric_names(sample);
+
+        let mut expected = HashSet::new();
+        expected.insert("chain_height");
+        expected.insert("consensus_current_era");
+        expected.insert("consumed_ram_bytes");
+        expected.insert("contract_runtime_apply_commit_bucket");
+
+        assert_eq!(extracted, expected);
     }
 }

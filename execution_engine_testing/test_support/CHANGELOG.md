@@ -28,12 +28,48 @@ All notable changes to this project will be documented in this file.  The format
 
 
 
+## 4.0.0
+
+### Changed
+* Update dependencies (in particular `casper-types` to v2.0.0 due to additional `Key` variant, requiring a major version bump here).
+
+
+
+## 3.1.1
+
+### Changed
+* Update chainspec values used in `PRODUCTION_RUN_GENESIS_REQUEST` to match those of Mainnet protocol version 1.4.15.
+
+
+
+## 3.1.0
+
+### Added
+* Add support for `commit_prune` of `casper-execution-engine`.
+
+
+
+## 3.0.0
+
+### Changed
+* Version bump only to match major version bump of `casper-execution-engine` dependency.
+
+
+
+## 2.3.0 [YANKED]
+
+### Added
+* Add `ChainspecConfig` to support parsing a chainspec.
+
+
+
 ## 2.2.0
 
 ### Added
 * Add some auction and transfer test support functions for reuse among benchmarks and unit tests.
 
-
+### Deprecated
+* Deprecated the `DEFAULT_GENESIS_REQUEST` in favor of `PRODUCTION_GENESIS_REQUEST`.
 
 ## 2.1.0
 

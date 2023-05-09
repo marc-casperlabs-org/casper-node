@@ -1,5 +1,5 @@
 //! A library providing hashing functionality including Merkle Proof utilities.
-#![doc(html_root_url = "https://docs.rs/casper-hashing/1.4.3")]
+#![doc(html_root_url = "https://docs.rs/casper-hashing/1.4.4")]
 #![doc(
     html_favicon_url = "https://raw.githubusercontent.com/CasperLabs/casper-node/master/images/CasperLabs_Logo_Favicon_RGB_50px.png",
     html_logo_url = "https://raw.githubusercontent.com/CasperLabs/casper-node/master/images/CasperLabs_Logo_Symbol_RGB.png",
@@ -46,6 +46,8 @@ pub use indexed_merkle_proof::IndexedMerkleProof;
 #[serde(deny_unknown_fields)]
 #[schemars(with = "String", description = "Hex-encoded hash digest.")]
 pub struct Digest(#[schemars(skip, with = "String")] [u8; Digest::LENGTH]);
+
+const CHUNK_DATA_ZEROED: &[u8] = &[0u8; ChunkWithProof::CHUNK_SIZE_BYTES];
 
 impl Digest {
     /// The number of bytes in a `Digest`.
@@ -105,7 +107,7 @@ impl Digest {
         let mut hasher = PAIR_PREFIX_HASHER
             .get_or_init(|| {
                 let mut hasher = VarBlake2b::new(Digest::LENGTH).unwrap();
-                hasher.update(&[0u8; ChunkWithProof::CHUNK_SIZE_BYTES]);
+                hasher.update(CHUNK_DATA_ZEROED);
                 hasher
             })
             .clone();
@@ -116,12 +118,6 @@ impl Digest {
             result.copy_from_slice(slice);
         });
         Digest(result)
-    }
-
-    /// Provides the same functionality as [`Digest::hash_merkle_tree`].
-    #[deprecated(since = "1.5.0", note = "use `hash_merkle_tree` instead")]
-    pub fn hash_vec_merkle_tree(vec: Vec<Digest>) -> Digest {
-        Digest::hash_merkle_tree(vec)
     }
 
     /// Returns the underlying BLAKE2b hash bytes
@@ -180,8 +176,8 @@ impl Digest {
         let mut kv_hashes: Vec<Digest> = Vec::with_capacity(btree_map.len());
         for (key, value) in btree_map.iter() {
             kv_hashes.push(Digest::hash_pair(
-                &Digest::hash(key.to_bytes()?),
-                &Digest::hash(value.to_bytes()?),
+                Digest::hash(key.to_bytes()?),
+                Digest::hash(value.to_bytes()?),
             ))
         }
         Ok(Self::hash_merkle_tree(kv_hashes))
@@ -212,7 +208,7 @@ impl Digest {
     pub fn hash_slice_with_proof(slice: &[Digest], proof: Digest) -> Digest {
         slice
             .iter()
-            .rfold(proof, |prev, next| Digest::hash_pair(next, &prev))
+            .rfold(proof, |prev, next| Digest::hash_pair(next, prev))
     }
 
     /// Returns a `Digest` parsed from a hex-encoded `Digest`.
@@ -235,6 +231,12 @@ impl Digest {
                     .map(Digest::blake2b_hash),
             )
         }
+    }
+
+    /// Provides the same functionality as [`Digest::hash_merkle_tree`].
+    #[deprecated(since = "1.5.0", note = "use `hash_merkle_tree` instead")]
+    pub fn hash_vec_merkle_tree(vec: Vec<Digest>) -> Digest {
+        Digest::hash_merkle_tree(vec)
     }
 }
 
@@ -343,7 +345,7 @@ impl Serialize for Digest {
         } else {
             // This is to keep backwards compatibility with how HexForm encodes
             // byte arrays. HexForm treats this like a slice.
-            (&self.0[..]).serialize(serializer)
+            self.0[..].serialize(serializer)
         }
     }
 }
@@ -503,7 +505,7 @@ mod tests {
         let hash1 = Digest([1u8; 32]);
         let hash2 = Digest([2u8; 32]);
 
-        let hash = Digest::hash_pair(&hash1, &hash2);
+        let hash = Digest::hash_pair(hash1, hash2);
         let hash_lower_hex = format!("{:x}", hash);
 
         assert_eq!(
@@ -675,7 +677,7 @@ mod tests {
             190, 67, 244, 169, 31, 95,
         ];
         assert_eq!(
-            Digest::blake2b_hash(&expected_final_hash_input),
+            Digest::blake2b_hash(expected_final_hash_input),
             long_data_hash
         );
 

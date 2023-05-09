@@ -80,7 +80,22 @@ function run_nightly_upgrade_test() {
     bash -i ./ci/nctl_upgrade.sh test_id=7 skip_setup=true
     bash -i ./ci/nctl_upgrade.sh test_id=8 skip_setup=true
     bash -i ./ci/nctl_upgrade.sh test_id=9 skip_setup=true
-    bash -i ./ci/nctl_upgrade.sh test_id=10 skip_setup=true
+    bash -i ./ci/nctl_upgrade.sh test_id=10
+    bash -i ./ci/nctl_upgrade.sh test_id=11
+    bash -i ./ci/nctl_upgrade.sh test_id=12
+    bash -i ./ci/nctl_upgrade.sh test_id=13
+}
+
+function run_soundness_test() {
+    echo "Starting network soundness test"
+
+    # Really-really make sure nothing is leftover
+    nctl-assets-teardown
+
+    $NCTL/sh/scenarios/network_soundness.py
+
+    # Clean up after the test
+    nctl-assets-teardown
 }
 
 source "$NCTL/sh/staging/set_override_tomls.sh"
@@ -95,11 +110,14 @@ start_run_teardown "itst14.sh"
 start_run_teardown "bond_its.sh"
 start_run_teardown "emergency_upgrade_test.sh"
 start_run_teardown "emergency_upgrade_test_balances.sh"
+start_run_teardown "upgrade_after_emergency_upgrade_test.sh"
 start_run_teardown "sync_test.sh timeout=500"
 start_run_teardown "gov96.sh"
 start_run_teardown "swap_validator_set.sh"
-# Keep this test last
 start_run_teardown "sync_upgrade_test.sh node=6 era=5 timeout=500"
+# without start_run_teardown - this one performs its own assets setup, network start and teardown
+source "$SCENARIOS_DIR/upgrade_after_emergency_upgrade_test_pre_1.5.sh"
 
-# Run nightly upgrade tests
 run_nightly_upgrade_test
+
+run_soundness_test

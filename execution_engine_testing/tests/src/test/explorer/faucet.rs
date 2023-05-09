@@ -430,7 +430,7 @@ fn should_not_fund_once_exhausted() {
             .new_faucet_fund_request_builder()
             .with_user_account(user_account)
             .with_arg_fund_amount(user_fund_amount)
-            .with_block_time(1000 + i as u64)
+            .with_block_time(1000 + i)
             .with_payment_amount(U512::from(payment_amount))
             .build();
 
@@ -841,10 +841,10 @@ fn faucet_costs() {
     // This test will fail if execution costs vary.  The expected costs should not be updated
     // without understanding why the cost has changed.  If the costs do change, it should be
     // reflected in the "Costs by Entry Point" section of the faucet crate's README.md.
-    const EXPECTED_FAUCET_INSTALL_COST: u64 = 77_924_962_810;
-    const EXPECTED_FAUCET_SET_VARIABLES_COST: u64 = 1_649_988_470;
-    const EXPECTED_FAUCET_CALL_BY_INSTALLER_COST: u64 = 4_128_188_320;
-    const EXPECTED_FAUCET_CALL_BY_USER_COST: u64 = 5_096_960_260;
+    const EXPECTED_FAUCET_INSTALL_COST: u64 = 71_691_403_720;
+    const EXPECTED_FAUCET_SET_VARIABLES_COST: u64 = 623_279_550;
+    const EXPECTED_FAUCET_CALL_BY_INSTALLER_COST: u64 = 3_101_326_690;
+    const EXPECTED_FAUCET_CALL_BY_USER_COST: u64 = 3_350_546_610;
 
     let installer_account = AccountHash::new([1u8; 32]);
     let user_account = AccountHash::new([2u8; 32]);

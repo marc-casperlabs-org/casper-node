@@ -65,7 +65,7 @@ function _step_01()
     source "$NCTL/sh/node/start.sh" node=all
 }
 
-# Step 02: Await era-id >= 1.
+# Step 02: Await for genesis
 function _step_02()
 {
     log_step_upgrades 2 "awaiting genesis era completion"
@@ -237,13 +237,23 @@ function _step_08()
     local NX_PROTOCOL_VERSION
     local NX_STATE_ROOT_HASH
     local RETRY_COUNT
+    local NODE_COUNT
 
     log_step_upgrades 8 "asserting joined nodes are running upgrade"
 
+    NODE_COUNT=$(get_count_of_nodes)
+    # Status refresh.
+    for NODE_ID in $(seq 1 $NODE_COUNT)
+    do
+        source "$NCTL"/sh/node/status.sh node="$NODE_ID"
+    done
+
     # Assert all nodes are live.
-    for NODE_ID in $(seq 1 "$(get_count_of_nodes)")
+    for NODE_ID in $(seq 1 $NODE_COUNT)
     do
         if [ $(get_node_is_up "$NODE_ID") == false ]; then
+            log "node-$NODE_ID not up"
+            log "NODE_COUNT_UP: $(get_count_of_up_nodes)"
             log "ERROR :: protocol upgrade failure - >= 1 nodes not live"
             exit 1
         fi

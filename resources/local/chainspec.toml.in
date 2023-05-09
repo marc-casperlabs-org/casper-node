@@ -37,6 +37,13 @@ validator_slots = 7
 # finalized: A higher value F makes it safer to rely on finalized blocks.  It also makes it more difficult to finalize
 # blocks, however, and requires strictly more than (F + 1)/2 validators to be working correctly.
 finality_threshold_fraction = [1, 3]
+# Protocol version from which nodes are required to hold strict finality signatures.
+start_protocol_version_with_strict_finality_signatures_required = '1.5.0'
+# Which finality is required for legacy blocks. Options are 'Strict', 'Weak' and 'Any'.
+# Used to determine finality sufficiency for new joiners syncing blocks created
+# in a protocol version before
+# `start_protocol_version_with_strict_finality_signatures_required`.
+legacy_required_finality = 'Strict'
 # Number of eras before an auction actually defines the set of validators.  If you bond with a sufficient bid in era N,
 # you will be a validator in era N + auction_delay + 1.
 auction_delay = 1
@@ -56,12 +63,16 @@ max_associated_keys = 100
 max_runtime_call_stack_height = 12
 # Minimum allowed delegation amount in motes
 minimum_delegation_amount = 500_000_000_000
+# Global state prune batch size (0 = this feature is off)
+prune_batch_size = 0
 # Enables strict arguments checking when calling a contract; i.e. that all non-optional args are provided and of the correct `CLType`.
 strict_argument_checking = false
 # Number of simultaneous peer requests.
 simultaneous_peer_requests = 5
 # The consensus protocol to use. Options are "Zug" and "Highway".
 consensus_protocol = 'Highway'
+# The maximum amount of delegators per validator. if the value is 0, there is no maximum capacity.
+max_delegators_per_validator = 0
 
 [highway]
 # Highway dynamically chooses its round length, between minimum_block_time and maximum_round_length.
@@ -100,7 +111,7 @@ native_transfer_minimum_motes = 2_500_000_000
 # Amount of free memory (in 64kB pages) each contract can use for stack.
 max_memory = 64
 # Max stack height (native WebAssembly stack limiter).
-max_stack_height = 188
+max_stack_height = 200
 
 [wasm.storage_costs]
 # Gas charged per byte stored in the global state.
@@ -125,8 +136,6 @@ const = 110
 local = 390
 # Global operations multiplier.
 global = 390
-# Control flow operations multiplier.
-control_flow = 440000
 # Integer operations multiplier.
 integer_comparison = 250
 # Conversion operations multiplier.
@@ -139,8 +148,27 @@ nop = 200
 current_memory = 290
 # Grow memory cost, per page (64kb).
 grow_memory = 240_000
-# Regular opcode cost.
-regular = 210
+
+# Control flow operations multiplier.
+[wasm.opcode_costs.control_flow]
+block = 440
+loop = 440
+if = 440
+else = 440
+end = 440
+br = 440_000
+br_if = 440_000
+return = 440
+select = 440
+call = 140_000
+call_indirect = 140_000
+drop = 440
+
+[wasm.opcode_costs.control_flow.br_table]
+# Fixed cost per `br_table` opcode
+cost = 440_000
+# Size of target labels in the `br_table` opcode will be multiplied by `size_multiplier`
+size_multiplier = 100
 
 # Host function declarations are located in smart_contracts/contract/src/ext_ffi.rs
 [wasm.host_function_costs]
@@ -194,10 +222,10 @@ wasmless_transfer_cost = 100_000_000
 [system_costs.auction_costs]
 get_era_validators = 10_000
 read_seigniorage_recipients = 10_000
-add_bid = 10_000
-withdraw_bid = 10_000
-delegate = 10_000
-undelegate = 10_000
+add_bid = 2_500_000_000
+withdraw_bid = 2_500_000_000
+delegate = 2_500_000_000
+undelegate = 2_500_000_000
 run_auction = 10_000
 slash = 10_000
 distribute = 10_000
@@ -205,7 +233,7 @@ withdraw_delegator_reward = 10_000
 withdraw_validator_reward = 10_000
 read_era_id = 10_000
 activate_bid = 10_000
-redelegate = 10_000
+redelegate = 2_500_000_000
 
 [system_costs.mint_costs]
 mint = 2_500_000_000

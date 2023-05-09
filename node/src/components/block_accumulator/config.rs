@@ -5,28 +5,21 @@ use casper_types::TimeDiff;
 
 const DEFAULT_ATTEMPT_EXECUTION_THRESHOLD: u64 = 3;
 const DEFAULT_DEAD_AIR_INTERVAL_SECS: u32 = 180;
-const DEFAULT_PURGE_INTERVAL_SECS: u32 = 6 * 60 * 60; // Six hours.
+#[cfg(test)]
+const DEFAULT_PURGE_INTERVAL_SECS: u32 = 5; // 5 seconds.
+
+#[cfg(not(test))]
+const DEFAULT_PURGE_INTERVAL_SECS: u32 = 5 * 60; // 5 minutes.
 
 /// Configuration options for the block accumulator.
 #[derive(Copy, Clone, DataSize, Debug, Deserialize, Serialize)]
 pub struct Config {
-    attempt_execution_threshold: u64,
-    dead_air_interval: TimeDiff,
-    purge_interval: TimeDiff,
-}
-
-impl Config {
-    pub(crate) fn attempt_execution_threshold(&self) -> u64 {
-        self.attempt_execution_threshold
-    }
-
-    pub(crate) fn dead_air_interval(&self) -> TimeDiff {
-        self.dead_air_interval
-    }
-
-    pub(crate) fn purge_interval(&self) -> TimeDiff {
-        self.purge_interval
-    }
+    /// Attempt execution threshold.
+    pub attempt_execution_threshold: u64,
+    /// Dead air interval.
+    pub dead_air_interval: TimeDiff,
+    /// Purge interval.
+    pub purge_interval: TimeDiff,
 }
 
 impl Default for Config {

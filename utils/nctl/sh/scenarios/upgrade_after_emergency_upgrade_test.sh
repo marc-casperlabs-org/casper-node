@@ -10,17 +10,19 @@ source "$NCTL"/sh/node/svc_"$NCTL_DAEMON_TYPE".sh
 set -e
 
 #######################################
-# Runs an integration tests that performs an emergency restart on the network.
+# Runs an integration tests that performs an emergency restart on the network,
+# and then also performs a regular upgrade after.
 # It also simulates social consensus on replacing the original validators (nodes 1-5)
 # with a completely new set (nodes 6-10).
 #
 # Arguments:
 #   `timeout=XXX` timeout (in seconds) when syncing. Default=300 seconds.
 #   `version=X_Y_Z` new protocol version to upgrade to. Default=2_0_0.
+#   `version2=X_Y_Z` new protocol version to upgrade to. Default=3_0_0.
 #######################################
 function main() {
     log "------------------------------------------------------------"
-    log "Emergency upgrade test begins"
+    log "Upgrade after emergency upgrade test begins"
     log "------------------------------------------------------------"
 
     do_await_genesis_era_to_complete
@@ -65,7 +67,7 @@ function main() {
             ejections=0
 
     log "------------------------------------------------------------"
-    log "Emergency upgrade test ends"
+    log "Upgrade after emergency upgrade test ends"
     log "------------------------------------------------------------"
 }
 
@@ -75,13 +77,6 @@ function log_step() {
     log "STEP $STEP: $COMMENT"
     log "------------------------------------------------------------"
     STEP=$((STEP + 1))
-}
-
-function do_await_genesis_era_to_complete() {
-    log_step "awaiting genesis era to complete"
-    while [ "$(get_chain_era)" != "2" ]; do
-        sleep 1.0
-    done
 }
 
 function do_stop_network() {

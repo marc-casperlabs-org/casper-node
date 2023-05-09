@@ -70,6 +70,7 @@ All notable changes to this project will be documented in this file.  The format
 
 ### Changed
 
+* The `starting_state_root_hash` field from the REST and JSON-RPC status endpoints now represents the state root hash of the lowest block in the available block range.
 * Detection of a crash no longer triggers DB integrity checks to run on node start; the checks can be triggered manually instead.
 * Nodes no longer connect to nodes that do not speak the same protocol version by default.
 * Incoming connections from peers are rejected if they are exceeding the default incoming connections per peer limit of 3.
@@ -92,7 +93,6 @@ All notable changes to this project will be documented in this file.  The format
 
 ### Deprecated
 
-* Deprecate the `starting_state_root_hash` field from the REST and JSON-RPC status endpoints.
 * `null` should no longer be used as a value for `params` in JSON-RPC requests.  Prefer an empty Array or Object.
 * Deprecate the `chain_height` metric in favor of `highest_available_block_height`.
 
@@ -104,8 +104,6 @@ All notable changes to this project will be documented in this file.  The format
 * Remove a temporary chainspec setting `[core.max_stored_value_size]` which was used to limit the size of individual values stored in global state.
 * Remove config section `[deploy_acceptor]` which only has one option `verify_accounts`, meaning deploys received from clients always undergo account balance checks to assess suitability for execution or not.
 * Remove storage integrity check.
-* Remove asymmetric key functionality (move to `casper-types` crate behind feature "std").
-* Remove time types (move to `casper-types` with some functionality behind feature "std").
 * Remove `SIGUSR1`/`SIGUSR2` queue dumps in favor of the diagnostics port.
 * Remove `casper-mainnet` feature flag.
 
@@ -116,7 +114,69 @@ All notable changes to this project will be documented in this file.  The format
 * JSON-RPC server is now mostly compliant with the standard. Specifically, correct error values are now returned in responses in many failure cases.
 
 ### Security
-* OpenSSL has been bumped to version 1.1.1.t, if compiling with vendored OpenSSL to address [RUSTSEC-2022-0014](https://rustsec.org/advisories/RUSTSEC-2022-0014), [RUSTSEC-2023-0006](https://rustsec.org/advisories/RUSTSEC-2023-0006), [RUSTSEC-2023-0007](https://rustsec.org/advisories/RUSTSEC-2023-0007), [RUSTSEC-2023-0009](https://rustsec.org/advisories/RUSTSEC-2023-0009) and [RUSTSEC-2023-0010](https://rustsec.org/advisories/RUSTSEC-2023-0010).
+* Bump `openssl` crate to version 0.10.48, if compiling with vendored OpenSSL to address latest RUSTSEC advisories.
+
+
+
+## 1.4.15-alt
+
+### Changed
+* Update dependencies (in particular `casper-types` to v2.0.0 due to additional `Key` variant).  Note that publishing `1.4.15-alt` is only to rectify the issue where `casper-types` was published as v1.6.0 despite having a breaking change.  It is expected to only be consumed as a crate; there will be no upgrade of Casper Mainnet, Testnet, etc to protocol version `1.4.15-alt`.
+
+
+
+## 1.4.15
+
+### Changed
+* Modified JSON-RPCs `chain_get_era_info_by_switch_block` and `chain_get_era_summary` to use either `Key::EraInfo` or `Key::EraSummary` as appropriate in order to provide useful responses.
+
+
+
+## 1.4.14
+
+### Added
+* Node executes new prune process after executing each block, whereby entries under `Key::EraInfo` are removed in batches of size defined by the new chainspec option `[core.prune_batch_size]`.
+* After executing a switch block, information about that era is stored to global state under a new static key `Key::EraSummary`.
+* Add a new JSON-RPC endpoint `chain_get_era_summary` to retrieve the information stored under `Key::EraSummary`.
+
+### Changed
+* Rather than storing an ever-increasing collection of era information after executing a switch block under `Key::EraInfo`, the node now stores only the information relevant to that era under `Key::EraSummary`.
+* Update `openssl` and `openssl-sys` to latest versions.
+
+### Removed
+* Remove asymmetric key functionality (move to `casper-types` crate behind feature `std`).
+* Remove time types (move to `casper-types` with some functionality behind feature `std`).
+
+### Fixed
+* Fix issue in BlockValidator inhibiting the use of fallback peers to fetch missing deploys.
+
+
+
+## 1.4.13
+
+### Changed
+* Update `casper-execution-engine`.
+
+
+
+## 1.4.8
+
+### Changed
+* Update `casper-execution-engine`.
+
+
+
+## 1.4.7
+
+### Changed
+* Update `casper-execution-engine` and three `openssl` crates to latest versions.
+
+
+
+## 1.4.6
+
+### Changed
+* Update dependencies to make use of scratch global state in the contract runtime.
 
 ## 1.4.8
 

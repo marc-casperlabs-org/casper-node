@@ -19,13 +19,13 @@ use datasize::DataSize;
 #[cfg(test)]
 use rand::Rng;
 use serde::Serialize;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use casper_execution_engine::{
     core::engine_state::{genesis::ExecConfig, ChainspecRegistry, UpgradeConfig},
     shared::{system_config::SystemConfig, wasm_config::WasmConfig},
 };
-use casper_hashing::{ChunkWithProof, Digest};
+use casper_hashing::Digest;
 #[cfg(test)]
 use casper_types::testing::TestRng;
 use casper_types::{
@@ -33,56 +33,75 @@ use casper_types::{
     EraId, ProtocolVersion,
 };
 
-#[cfg(test)]
-pub(crate) use self::accounts_config::{AccountConfig, ValidatorConfig};
-pub use self::error::Error;
-pub(crate) use self::{
-    accounts_config::AccountsConfig,
+pub use self::{
+    accounts_config::{AccountConfig, AccountsConfig, DelegatorConfig, ValidatorConfig},
     activation_point::ActivationPoint,
     chainspec_raw_bytes::ChainspecRawBytes,
-    core_config::{ConsensusProtocolName, CoreConfig},
+    core_config::{ConsensusProtocolName, CoreConfig, LegacyRequiredFinality},
     deploy_config::DeployConfig,
+    error::Error,
     global_state_update::GlobalStateUpdate,
     highway_config::HighwayConfig,
     network_config::NetworkConfig,
     protocol_config::ProtocolConfig,
 };
-use crate::utils::Loadable;
+use crate::{components::network::generate_largest_serialized_message, utils::Loadable};
 
 /// The name of the chainspec file on disk.
 pub const CHAINSPEC_FILENAME: &str = "chainspec.toml";
+
+// Additional overhead accounted for (eg. lower level networking packet encapsulation).
+const CHAINSPEC_NETWORK_MESSAGE_SAFETY_MARGIN: usize = 256;
 
 /// A collection of configuration settings describing the state of the system at genesis and after
 /// upgrades to basic system functionality occurring after genesis.
 #[derive(DataSize, PartialEq, Eq, Serialize, Debug)]
 pub struct Chainspec {
+    /// Protocol config.
     #[serde(rename = "protocol")]
-    pub(crate) protocol_config: ProtocolConfig,
+    pub protocol_config: ProtocolConfig,
+
+    /// Network config.
     #[serde(rename = "network")]
-    pub(crate) network_config: NetworkConfig,
+    pub network_config: NetworkConfig,
+
+    /// Core config.
     #[serde(rename = "core")]
-    pub(crate) core_config: CoreConfig,
+    pub core_config: CoreConfig,
+
+    /// Highway config.
     #[serde(rename = "highway")]
-    pub(crate) highway_config: HighwayConfig,
+    pub highway_config: HighwayConfig,
+
+    /// Deploy Config.
     #[serde(rename = "deploys")]
-    pub(crate) deploy_config: DeployConfig,
+    pub deploy_config: DeployConfig,
+
+    /// Wasm config.
     #[serde(rename = "wasm")]
-    pub(crate) wasm_config: WasmConfig,
+    pub wasm_config: WasmConfig,
+
+    /// System costs config.
     #[serde(rename = "system_costs")]
-    pub(crate) system_costs_config: SystemConfig,
+    pub system_costs_config: SystemConfig,
 }
 
 impl Chainspec {
     /// Returns `false` and logs errors if the values set in the config don't make sense.
-    pub(crate) fn is_valid(&self) -> bool {
-        if (self.network_config.maximum_net_message_size as usize)
-            < ChunkWithProof::CHUNK_SIZE_BYTES * 3
+    #[tracing::instrument(ret, level = "info", skip(self), fields(hash=%self.hash()))]
+    pub fn is_valid(&self) -> bool {
+        info!("begin chainspec validation");
+        // Ensure the size of the largest message generated under these chainspec settings does not
+        // exceed the configured message size limit.
+        let serialized = generate_largest_serialized_message(self);
+
+        if serialized.len() + CHAINSPEC_NETWORK_MESSAGE_SAFETY_MARGIN
+            > self.network_config.maximum_net_message_size as usize
         {
-            warn!(
-                "config value [network][maximum_net_message_size] should be set to at least
-            CHUNK_SIZE_BYTES * 3 ({})",
-                ChunkWithProof::CHUNK_SIZE_BYTES * 3
+            warn!(calculated_length=serialized.len(), configured_maximum=self.network_config.maximum_net_message_size,
+                "config value [network][maximum_net_message_size] is too small to accomodate the maximum message size",
             );
+            return false;
         }
 
         if self.core_config.unbonding_delay <= self.core_config.auction_delay {
@@ -121,22 +140,22 @@ impl Chainspec {
     }
 
     /// Serializes `self` and hashes the resulting bytes.
-    pub(crate) fn hash(&self) -> Digest {
+    pub fn hash(&self) -> Digest {
         let serialized_chainspec = self.to_bytes().unwrap_or_else(|error| {
             error!(%error, "failed to serialize chainspec");
             vec![]
         });
-        Digest::hash(&serialized_chainspec)
+        Digest::hash(serialized_chainspec)
     }
 
     /// Returns the protocol version of the chainspec.
-    pub(crate) fn protocol_version(&self) -> ProtocolVersion {
+    pub fn protocol_version(&self) -> ProtocolVersion {
         self.protocol_config.version
     }
 
     /// Returns the era ID of where we should reset back to.  This means stored blocks in that and
     /// subsequent eras are deleted from storage.
-    pub(crate) fn hard_reset_to_start_of_era(&self) -> Option<EraId> {
+    pub fn hard_reset_to_start_of_era(&self) -> Option<EraId> {
         self.protocol_config
             .hard_reset
             .then(|| self.protocol_config.activation_point.era_id())
@@ -283,14 +302,14 @@ mod tests {
 
     use casper_execution_engine::shared::{
         host_function_costs::{HostFunction, HostFunctionCosts},
-        opcode_costs::OpcodeCosts,
+        opcode_costs::{BrTableCost, ControlFlowCosts, OpcodeCosts},
         storage_costs::StorageCosts,
         wasm_config::WasmConfig,
     };
     use casper_types::{EraId, Motes, ProtocolVersion, StoredValue, TimeDiff, Timestamp, U512};
 
     use super::*;
-    use crate::utils::RESOURCES_PATH;
+    use crate::{testing::init_logging, utils::RESOURCES_PATH};
 
     static EXPECTED_GENESIS_HOST_FUNCTION_COSTS: Lazy<HostFunctionCosts> =
         Lazy::new(|| HostFunctionCosts {
@@ -360,14 +379,30 @@ mod tests {
         op_const: 19,
         local: 20,
         global: 21,
-        control_flow: 22,
-        integer_comparison: 23,
-        conversion: 24,
-        unreachable: 25,
-        nop: 26,
-        current_memory: 27,
-        grow_memory: 28,
-        regular: 29,
+        control_flow: ControlFlowCosts {
+            block: 1,
+            op_loop: 2,
+            op_if: 3,
+            op_else: 4,
+            end: 5,
+            br: 6,
+            br_if: 7,
+            br_table: BrTableCost {
+                cost: 0,
+                size_multiplier: 1,
+            },
+            op_return: 8,
+            call: 9,
+            call_indirect: 10,
+            drop: 11,
+            select: 12,
+        },
+        integer_comparison: 22,
+        conversion: 23,
+        unreachable: 24,
+        nop: 25,
+        current_memory: 26,
+        grow_memory: 27,
     };
 
     fn check_spec(spec: Chainspec, is_first_version: bool) {
@@ -518,5 +553,15 @@ mod tests {
 
         // With equal hashes
         assert_eq!(chainspec.hash(), chainspec_unordered.hash());
+    }
+
+    #[test]
+    fn bundled_production_chainspec_is_valid() {
+        init_logging();
+
+        let (chainspec, _raw_bytes): (Chainspec, ChainspecRawBytes) =
+            Loadable::from_resources("production");
+
+        assert!(chainspec.is_valid());
     }
 }

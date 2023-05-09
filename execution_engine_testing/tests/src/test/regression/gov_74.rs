@@ -45,7 +45,7 @@ static NEW_PROTOCOL_VERSION: Lazy<ProtocolVersion> = Lazy::new(|| {
 
 fn initialize_builder() -> InMemoryWasmTestBuilder {
     let mut builder = InMemoryWasmTestBuilder::default();
-    builder.run_genesis(&*PRODUCTION_RUN_GENESIS_REQUEST);
+    builder.run_genesis(&PRODUCTION_RUN_GENESIS_REQUEST);
     builder
 }
 
@@ -111,6 +111,7 @@ fn should_observe_stack_height_limit() {
             DEFAULT_MINIMUM_DELEGATION_AMOUNT,
             DEFAULT_STRICT_ARGUMENT_CHECKING,
             DEFAULT_VESTING_SCHEDULE_LENGTH_MILLIS,
+            None,
             WasmConfig::new(
                 DEFAULT_WASM_MAX_MEMORY,
                 NEW_WASM_STACK_HEIGHT,

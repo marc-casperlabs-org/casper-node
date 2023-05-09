@@ -17,7 +17,9 @@ use casper_types::ProtocolVersion;
 
 use super::{
     account::PutDeploy,
-    chain::{GetBlock, GetBlockTransfers, GetEraInfoBySwitchBlock, GetStateRootHash},
+    chain::{
+        GetBlock, GetBlockTransfers, GetEraInfoBySwitchBlock, GetEraSummary, GetStateRootHash,
+    },
     info::{GetChainspec, GetDeploy, GetPeers, GetStatus, GetValidatorChanges},
     state::{
         GetAccountInfo, GetAuctionInfo, GetBalance, GetDictionaryItem, GetItem, QueryBalance,
@@ -28,7 +30,7 @@ use super::{
 use crate::effect::EffectBuilder;
 
 pub(crate) const DOCS_EXAMPLE_PROTOCOL_VERSION: ProtocolVersion =
-    ProtocolVersion::from_parts(1, 4, 8);
+    ProtocolVersion::from_parts(1, 4, 15);
 
 const DEFINITIONS_PATH: &str = "#/components/schemas/";
 
@@ -102,6 +104,10 @@ pub(crate) static OPEN_RPC_SCHEMA: Lazy<OpenRpcSchema> = Lazy::new(|| {
     schema.push_with_optional_params::<GetAuctionInfo>(
         "returns the bids and validators as of either a specific block (by height or hash), or \
         the most recently added block",
+    );
+    schema.push_with_optional_params::<GetEraSummary>(
+        "returns the era summary at either a specific block (by height or hash), or the most \
+        recently added block",
     );
 
     schema
@@ -430,7 +436,7 @@ pub struct ListRpcsResult {
 
 impl DocExample for ListRpcsResult {
     fn doc_example() -> &'static Self {
-        &*LIST_RPCS_RESULT
+        &LIST_RPCS_RESULT
     }
 }
 
@@ -468,7 +474,7 @@ mod doc_example_impls {
 
     impl DocExample for Timestamp {
         fn doc_example() -> &'static Self {
-            &*TIMESTAMP_EXAMPLE
+            &TIMESTAMP_EXAMPLE
         }
     }
 }

@@ -95,6 +95,19 @@ impl MainReactor {
                 // effects, any referenced deploys, & sufficient finality (by weight) of signatures
                 SyncIdentifier::SyncedBlockIdentifier(block_hash, block_height, era_id),
             ),
+            BlockSynchronizerProgress::Stalled(block_hash, _, last_progress_time) => {
+                // working on syncing a block
+                warn!(
+                    %block_hash,
+                    %last_progress_time,
+                    "CatchUp: block synchronizer stalled while syncing block; purging historical builder"
+                );
+                self.block_synchronizer.purge_historical();
+                match self.trusted_hash {
+                    Some(trusted_hash) => self.catch_up_trusted_hash(trusted_hash),
+                    None => self.catch_up_no_trusted_hash(),
+                }
+            }
         }
     }
 
@@ -108,7 +121,7 @@ impl MainReactor {
                 // trusted block hash to be provided via the config file
                 info!("CatchUp: local tip detected, no trusted hash");
                 if block.header().is_switch_block() {
-                    self.switch_block = Some(block.header().clone());
+                    self.switch_block_header = Some(block.header().clone());
                 }
                 Either::Left(SyncIdentifier::LocalTip(
                     *block.hash(),
@@ -116,7 +129,7 @@ impl MainReactor {
                     block.header().era_id(),
                 ))
             }
-            Ok(None) if self.switch_block.is_none() => {
+            Ok(None) if self.switch_block_header.is_none() => {
                 // no trusted hash, no local block, might be genesis
                 self.catch_up_check_genesis()
             }
@@ -275,7 +288,7 @@ impl MainReactor {
         // otherwise block_synchronizer detects as Idle which can cause unnecessary churn
         // on subsequent cranks while leaper is awaiting responses.
         self.block_synchronizer
-            .register_block_by_hash(block_hash, true, true);
+            .register_block_by_hash(block_hash, true);
         let leap_status = self.sync_leaper.leap_status();
         info!(%block_hash, %leap_status, "CatchUp: status");
         match leap_status {
@@ -288,7 +301,7 @@ impl MainReactor {
                 best_available,
                 from_peers,
                 ..
-            } => self.catch_up_leap_received(effect_builder, rng, best_available, from_peers),
+            } => self.catch_up_leap_received(effect_builder, rng, *best_available, from_peers),
             LeapState::Failed { error, .. } => {
                 self.catch_up_leap_failed(effect_builder, rng, block_hash, error)
             }
@@ -346,13 +359,13 @@ impl MainReactor {
         &mut self,
         effect_builder: EffectBuilder<MainEvent>,
         rng: &mut NodeRng,
-        best_available: Box<SyncLeap>,
+        sync_leap: SyncLeap,
         from_peers: Vec<NodeId>,
     ) -> CatchUpInstruction {
-        let block_hash = best_available.highest_block_hash();
-        let block_height = best_available.highest_block_height();
+        let block_hash = sync_leap.highest_block_hash();
+        let block_height = sync_leap.highest_block_height();
         info!(
-            %best_available,
+            %sync_leap,
             %block_height,
             %block_hash,
             "CatchUp: leap received"
@@ -363,7 +376,7 @@ impl MainReactor {
         }
 
         for validator_weights in
-            best_available.era_validator_weights(self.validator_matrix.fault_tolerance_threshold())
+            sync_leap.era_validator_weights(self.validator_matrix.fault_tolerance_threshold())
         {
             self.validator_matrix
                 .register_era_validator_weights(validator_weights);
@@ -384,7 +397,7 @@ impl MainReactor {
         ));
 
         self.block_synchronizer
-            .register_sync_leap(&*best_available, from_peers, true);
+            .register_sync_leap(&sync_leap, from_peers, true);
 
         CatchUpInstruction::Do(self.control_logic_default_delay.into(), effects)
     }
@@ -396,7 +409,7 @@ impl MainReactor {
     ) -> CatchUpInstruction {
         if self
             .block_synchronizer
-            .register_block_by_hash(block_hash, true, true)
+            .register_block_by_hash(block_hash, true)
         {
             // NeedNext will self perpetuate until nothing is needed for this block
             let mut effects = Effects::new();

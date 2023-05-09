@@ -11,6 +11,7 @@ maximum_net_message_size = 23_068_672
 era_duration = '3minutes'
 minimum_era_height = 9
 minimum_block_time = '16seconds'
+prune_batch_size = 1
 validator_slots = 5
 finality_threshold_fraction = [2, 25]
 auction_delay = 3
@@ -57,7 +58,6 @@ store = 18
 const = 19
 local = 20
 global = 21
-control_flow = 22
 integer_comparison = 23
 conversion = 24
 unreachable = 25
@@ -65,6 +65,24 @@ nop = 26
 current_memory = 27
 grow_memory = 28
 regular = 29
+
+[wasm.opcode_costs.control_flow]
+loop = 2
+if = 3
+else = 4
+block = 1
+end = 5
+call = 9
+br = 6
+br_if = 7
+return = 8
+call_indirect = 10
+drop = 11
+select = 12
+
+[wasm.opcode_costs.control_flow.br_table]
+size_multiplier = 100
+cost = 1000
 
 [wasm.storage_costs]
 gas_per_byte = 101

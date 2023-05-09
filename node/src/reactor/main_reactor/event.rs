@@ -1,9 +1,13 @@
-use std::fmt::{self, Debug, Display, Formatter};
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    mem,
+};
 
 use derive_more::From;
 use serde::Serialize;
 
 use casper_types::{system::auction::EraValidators, EraId};
+use static_assertions::const_assert;
 
 use crate::{
     components::{
@@ -18,7 +22,8 @@ use crate::{
         announcements::{
             BlockAccumulatorAnnouncement, ConsensusAnnouncement, ContractRuntimeAnnouncement,
             ControlAnnouncement, DeployAcceptorAnnouncement, DeployBufferAnnouncement,
-            FatalAnnouncement, GossiperAnnouncement, MetaBlockAnnouncement,
+            FatalAnnouncement, FetchedNewBlockAnnouncement,
+            FetchedNewFinalitySignatureAnnouncement, GossiperAnnouncement, MetaBlockAnnouncement,
             PeerBehaviorAnnouncement, RpcServerAnnouncement, UnexecutedBlockAnnouncement,
             UpgradeWatcherAnnouncement,
         },
@@ -29,12 +34,13 @@ use crate::{
             TrieResponseIncoming,
         },
         requests::{
-            BeginGossipRequest, BlockAccumulatorRequest, BlockCompleteConfirmationRequest,
-            BlockSynchronizerRequest, BlockValidationRequest, ChainspecRawBytesRequest,
-            ConsensusRequest, ContractRuntimeRequest, DeployBufferRequest, FetcherRequest,
-            MakeBlockExecutableRequest, MetricsRequest, NetworkInfoRequest, NetworkRequest,
-            ReactorStatusRequest, RestRequest, RpcRequest, SetNodeStopRequest, StorageRequest,
-            SyncGlobalStateRequest, TrieAccumulatorRequest, UpgradeWatcherRequest,
+            BeginGossipRequest, BlockAccumulatorRequest, BlockSynchronizerRequest,
+            BlockValidationRequest, ChainspecRawBytesRequest, ConsensusRequest,
+            ContractRuntimeRequest, DeployBufferRequest, FetcherRequest,
+            MakeBlockExecutableRequest, MarkBlockCompletedRequest, MetricsRequest,
+            NetworkInfoRequest, NetworkRequest, ReactorStatusRequest, RestRequest, RpcRequest,
+            SetNodeStopRequest, StorageRequest, SyncGlobalStateRequest, TrieAccumulatorRequest,
+            UpgradeWatcherRequest,
         },
     },
     protocol::Message,
@@ -45,11 +51,15 @@ use crate::{
     },
 };
 
+// Enforce an upper bound for the `MainEvent` size, which is already quite hefty.
+// 192 is six 256 bit copies, ideally we'd be below, but for now we enforce this as an upper limit.
+// 200 is where the `large_enum_variant` clippy lint draws the line as well.
+const _MAIN_EVENT_SIZE: usize = mem::size_of::<MainEvent>();
+const_assert!(_MAIN_EVENT_SIZE <= 192);
+
 /// Top-level event for the reactor.
 #[derive(Debug, From, Serialize)]
 #[must_use]
-// Note: The large enum size must be reigned in eventually. This is a stopgap for now.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum MainEvent {
     #[from]
     ControlAnnouncement(ControlAnnouncement),
@@ -152,9 +162,11 @@ pub(crate) enum MainEvent {
     #[from]
     BlockFetcherRequest(#[serde(skip_serializing)] FetcherRequest<Block>),
     #[from]
+    BlockFetcherAnnouncement(#[serde(skip_serializing)] FetchedNewBlockAnnouncement),
+    #[from]
     MakeBlockExecutableRequest(MakeBlockExecutableRequest),
     #[from]
-    BlockCompleteConfirmationRequest(BlockCompleteConfirmationRequest),
+    MarkBlockCompletedRequest(MarkBlockCompletedRequest),
     #[from]
     FinalitySignatureIncoming(FinalitySignatureIncoming),
     #[from]
@@ -169,6 +181,10 @@ pub(crate) enum MainEvent {
     FinalitySignatureFetcher(#[serde(skip_serializing)] fetcher::Event<FinalitySignature>),
     #[from]
     FinalitySignatureFetcherRequest(#[serde(skip_serializing)] FetcherRequest<FinalitySignature>),
+    #[from]
+    FinalitySignatureFetcherAnnouncement(
+        #[serde(skip_serializing)] FetchedNewFinalitySignatureAnnouncement,
+    ),
     #[from]
     DeployAcceptor(#[serde(skip_serializing)] deploy_acceptor::Event),
     #[from]
@@ -230,8 +246,8 @@ pub(crate) enum MainEvent {
     #[from]
     UnexecutedBlockAnnouncement(UnexecutedBlockAnnouncement),
 
-    // Event related to figuring out validators for immediate switch blocks.
-    GotImmediateSwitchBlockEraValidators(EraId, EraValidators, EraValidators),
+    // Event related to figuring out validators for blocks after upgrades.
+    GotBlockAfterUpgradeEraValidators(EraId, EraValidators, EraValidators),
 }
 
 impl ReactorEvent for MainEvent {
@@ -296,7 +312,7 @@ impl ReactorEvent for MainEvent {
             MainEvent::ChainspecRawBytesRequest(_) => "ChainspecRawBytesRequest",
             MainEvent::UpgradeWatcherRequest(_) => "UpgradeWatcherRequest",
             MainEvent::StorageRequest(_) => "StorageRequest",
-            MainEvent::BlockCompleteConfirmationRequest(_) => "MarkBlockCompletedRequest",
+            MainEvent::MarkBlockCompletedRequest(_) => "MarkBlockCompletedRequest",
             MainEvent::DumpConsensusStateRequest(_) => "DumpConsensusStateRequest",
             MainEvent::ControlAnnouncement(_) => "ControlAnnouncement",
             MainEvent::FatalAnnouncement(_) => "FatalAnnouncement",
@@ -309,6 +325,9 @@ impl ReactorEvent for MainEvent {
             MainEvent::UpgradeWatcherAnnouncement(_) => "UpgradeWatcherAnnouncement",
             MainEvent::NetworkPeerBehaviorAnnouncement(_) => "BlocklistAnnouncement",
             MainEvent::DeployBufferAnnouncement(_) => "DeployBufferAnnouncement",
+            MainEvent::FinalitySignatureFetcherAnnouncement(_) => {
+                "FinalitySignatureFetcherAnnouncement"
+            }
             MainEvent::AddressGossiperCrank(_) => "BeginAddressGossipRequest",
             MainEvent::ConsensusMessageIncoming(_) => "ConsensusMessageIncoming",
             MainEvent::ConsensusDemand(_) => "ConsensusDemand",
@@ -335,12 +354,13 @@ impl ReactorEvent for MainEvent {
             MainEvent::BlockGossiperAnnouncement(_) => "BlockGossiperAnnouncement",
             MainEvent::BlockFetcher(_) => "BlockFetcher",
             MainEvent::BlockFetcherRequest(_) => "BlockFetcherRequest",
+            MainEvent::BlockFetcherAnnouncement(_) => "BlockFetcherAnnouncement",
             MainEvent::SetNodeStopRequest(_) => "SetNodeStopRequest",
             MainEvent::MainReactorRequest(_) => "MainReactorRequest",
             MainEvent::MakeBlockExecutableRequest(_) => "MakeBlockExecutableRequest",
             MainEvent::MetaBlockAnnouncement(_) => "MetaBlockAnnouncement",
             MainEvent::UnexecutedBlockAnnouncement(_) => "UnexecutedBlockAnnouncement",
-            MainEvent::GotImmediateSwitchBlockEraValidators(_, _, _) => {
+            MainEvent::GotBlockAfterUpgradeEraValidators(_, _, _) => {
                 "GotImmediateSwitchBlockEraValidators"
             }
         }
@@ -420,7 +440,7 @@ impl Display for MainEvent {
                 write!(f, "upgrade watcher request: {}", req)
             }
             MainEvent::StorageRequest(req) => write!(f, "storage request: {}", req),
-            MainEvent::BlockCompleteConfirmationRequest(req) => {
+            MainEvent::MarkBlockCompletedRequest(req) => {
                 write!(f, "mark block completed request: {}", req)
             }
             MainEvent::BlockHeaderFetcherRequest(request) => {
@@ -496,6 +516,9 @@ impl Display for MainEvent {
             MainEvent::NetworkPeerBehaviorAnnouncement(ann) => {
                 write!(f, "blocklist announcement: {}", ann)
             }
+            MainEvent::FinalitySignatureFetcherAnnouncement(ann) => {
+                write!(f, "finality signature fetcher announcement: {}", ann)
+            }
             MainEvent::ConsensusMessageIncoming(inner) => Display::fmt(inner, f),
             MainEvent::ConsensusDemand(inner) => Display::fmt(inner, f),
             MainEvent::DeployGossiperIncoming(inner) => Display::fmt(inner, f),
@@ -513,15 +536,16 @@ impl Display for MainEvent {
             MainEvent::BlockGossiperAnnouncement(inner) => Display::fmt(inner, f),
             MainEvent::BlockFetcher(inner) => Display::fmt(inner, f),
             MainEvent::BlockFetcherRequest(inner) => Display::fmt(inner, f),
+            MainEvent::BlockFetcherAnnouncement(inner) => Display::fmt(inner, f),
             MainEvent::SetNodeStopRequest(inner) => Display::fmt(inner, f),
             MainEvent::MainReactorRequest(inner) => Display::fmt(inner, f),
             MainEvent::MakeBlockExecutableRequest(inner) => Display::fmt(inner, f),
             MainEvent::MetaBlockAnnouncement(inner) => Display::fmt(inner, f),
             MainEvent::UnexecutedBlockAnnouncement(inner) => Display::fmt(inner, f),
-            MainEvent::GotImmediateSwitchBlockEraValidators(era_id, _, _) => {
+            MainEvent::GotBlockAfterUpgradeEraValidators(era_id, _, _) => {
                 write!(
                     f,
-                    "got immediate switch block era validators for era {}",
+                    "got era validators for block after an upgrade in era {}",
                     era_id
                 )
             }

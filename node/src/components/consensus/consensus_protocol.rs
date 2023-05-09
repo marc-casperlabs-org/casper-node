@@ -159,7 +159,7 @@ impl<VID> EraReport<VID> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct TerminalBlockData<C: Context> {
     /// The rewards for participating in consensus.
     pub(crate) rewards: BTreeMap<C::ValidatorId, u64>,
@@ -170,7 +170,7 @@ pub(crate) struct TerminalBlockData<C: Context> {
 /// A finalized block. All nodes are guaranteed to see the same sequence of blocks, and to agree
 /// about all the information contained in this type, as long as the total weight of faulty
 /// validators remains below the threshold.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FinalizedBlock<C: Context> {
     /// The finalized value.
     pub(crate) value: C::ConsensusValue,
@@ -194,7 +194,6 @@ pub(crate) enum ProtocolOutcome<C: Context> {
     CreatedGossipMessage(EraMessage<C>),
     CreatedTargetedMessage(EraMessage<C>, NodeId),
     CreatedMessageToRandomPeer(EraMessage<C>),
-    CreatedTargetedRequest(EraRequest<C>, NodeId),
     CreatedRequestToRandomPeer(EraRequest<C>),
     ScheduleTimer(Timestamp, TimerId),
     QueueAction(ActionId),
@@ -306,7 +305,7 @@ pub(crate) trait ConsensusProtocol<C: Context>: Send {
     fn mark_faulty(&mut self, vid: &C::ValidatorId);
 
     /// Sends evidence for a faulty of validator `vid` to the `sender` of the request.
-    fn request_evidence(&self, sender: NodeId, vid: &C::ValidatorId) -> ProtocolOutcomes<C>;
+    fn send_evidence(&self, sender: NodeId, vid: &C::ValidatorId) -> ProtocolOutcomes<C>;
 
     /// Sets the pause status: While paused we don't create consensus messages other than pings.
     fn set_paused(&mut self, paused: bool, now: Timestamp) -> ProtocolOutcomes<C>;

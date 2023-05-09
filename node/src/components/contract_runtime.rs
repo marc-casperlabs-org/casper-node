@@ -53,8 +53,8 @@ use crate::{
     fatal,
     protocol::Message,
     types::{
-        BlockHash, BlockHeader, Chainspec, ChainspecRawBytes, ChunkingError, Deploy,
-        FinalizedBlock, MetaBlock, MetaBlockState, TrieOrChunk, TrieOrChunkId,
+        ActivationPoint, BlockHash, BlockHeader, Chainspec, ChainspecRawBytes, ChunkingError,
+        Deploy, FinalizedBlock, MetaBlock, MetaBlockState, TrieOrChunk, TrieOrChunkId,
     },
     NodeRng,
 };
@@ -205,6 +205,8 @@ pub(crate) struct ContractRuntime {
     exec_queue: ExecQueue,
     /// Cached instance of a [`SystemContractRegistry`].
     system_contract_registry: Option<SystemContractRegistry>,
+    activation_point: ActivationPoint,
+    prune_batch_size: u64,
 }
 
 impl Debug for ContractRuntime {
@@ -265,12 +267,15 @@ impl ContractRuntime {
         effect_builder: EffectBuilder<REv>,
         TrieRequestIncoming {
             sender,
-            message: TrieRequest(ref serialized_id),
+            message,
+            ticket,
         }: TrieRequestIncoming,
     ) -> Effects<Event>
     where
         REv: From<NetworkRequest<Message>> + Send,
     {
+        drop(ticket); // TODO: Properly handle ticket.
+        let TrieRequest(ref serialized_id) = *message;
         let fetch_response = match self.get_trie(serialized_id) {
             Ok(fetch_response) => fetch_response,
             Err(error) => {
@@ -292,11 +297,12 @@ impl ContractRuntime {
     fn handle_trie_demand(
         &self,
         TrieDemand {
-            request_msg: TrieRequest(ref serialized_id),
+            request_msg,
             auto_closing_responder,
             ..
         }: TrieDemand,
     ) -> Effects<Event> {
+        let TrieRequest(ref serialized_id) = *request_msg;
         let fetch_response = match self.get_trie(serialized_id) {
             Ok(fetch_response) => fetch_response,
             Err(error) => {
@@ -375,6 +381,9 @@ impl ContractRuntime {
                 trace!(?request, "get era validators request");
                 let engine_state = Arc::clone(&self.engine_state);
                 let metrics = Arc::clone(&self.metrics);
+
+                self.try_init_system_contract_registry_cache();
+
                 let system_contract_registry = self.system_contract_registry.clone();
                 // Increment the counter to track the amount of times GetEraValidators was
                 // requested.
@@ -453,6 +462,7 @@ impl ContractRuntime {
             ContractRuntimeRequest::EnqueueBlockForExecution {
                 finalized_block,
                 deploys,
+                key_block_height_for_activation_point,
                 meta_block_state,
             } => {
                 let mut effects = Effects::new();
@@ -482,6 +492,8 @@ impl ContractRuntime {
                         let engine_state = Arc::clone(&self.engine_state);
                         let metrics = Arc::clone(&self.metrics);
                         let shared_pre_state = Arc::clone(&self.execution_pre_state);
+                        let activation_point = self.activation_point;
+                        let prune_batch_size = self.prune_batch_size;
                         effects.extend(
                             Self::execute_finalized_block_or_requeue(
                                 engine_state,
@@ -493,6 +505,9 @@ impl ContractRuntime {
                                 protocol_version,
                                 finalized_block,
                                 deploys,
+                                activation_point,
+                                key_block_height_for_activation_point,
+                                prune_batch_size,
                                 meta_block_state,
                             )
                             .ignore(),
@@ -581,8 +596,11 @@ impl ContractRuntime {
         max_associated_keys: u32,
         max_runtime_call_stack_height: u32,
         minimum_delegation_amount: u64,
+        activation_point: ActivationPoint,
+        prune_batch_size: u64,
         strict_argument_checking: bool,
         vesting_schedule_period_millis: u64,
+        max_delegators_per_validator: Option<u32>,
         registry: &Registry,
     ) -> Result<Self, ConfigError> {
         // TODO: This is bogus, get rid of this
@@ -595,9 +613,9 @@ impl ContractRuntime {
 
         let environment = Arc::new(LmdbEnvironment::new(
             storage_dir,
-            contract_runtime_config.max_global_state_size(),
-            contract_runtime_config.max_readers(),
-            contract_runtime_config.manual_sync_enabled(),
+            contract_runtime_config.max_global_state_size_or_default(),
+            contract_runtime_config.max_readers_or_default(),
+            contract_runtime_config.manual_sync_enabled_or_default(),
         )?);
 
         let trie_store = Arc::new(LmdbTrieStore::new(
@@ -608,12 +626,13 @@ impl ContractRuntime {
 
         let global_state = LmdbGlobalState::empty(environment, trie_store)?;
         let engine_config = EngineConfig::new(
-            contract_runtime_config.max_query_depth(),
+            contract_runtime_config.max_query_depth_or_default(),
             max_associated_keys,
             max_runtime_call_stack_height,
             minimum_delegation_amount,
             strict_argument_checking,
             vesting_schedule_period_millis,
+            max_delegators_per_validator,
             wasm_config,
             system_config,
         );
@@ -630,6 +649,8 @@ impl ContractRuntime {
             protocol_version,
             exec_queue: Arc::new(Mutex::new(BTreeMap::new())),
             system_contract_registry: None,
+            activation_point,
+            prune_batch_size,
         })
     }
 
@@ -688,10 +709,7 @@ impl ContractRuntime {
         Ok(result)
     }
 
-    pub(crate) fn set_initial_state(
-        &mut self,
-        sequential_block_state: ExecutionPreState,
-    ) -> Result<(), ConfigError> {
+    pub(crate) fn set_initial_state(&mut self, sequential_block_state: ExecutionPreState) {
         let mut execution_pre_state = self.execution_pre_state.lock().unwrap();
         *execution_pre_state = sequential_block_state;
 
@@ -706,28 +724,6 @@ impl ContractRuntime {
                 .exec_queue_size
                 .set(exec_queue.len().try_into().unwrap_or(i64::MIN));
         }
-
-        // Initialize the system contract registry.
-        //
-        // This is assumed to always work. In case following query fails we assume that the node is
-        // incompatible with the network which could happen if (for example) a node operator skipped
-        // important update and did not migrate old protocol data db into the global state.
-        let state_root_hash = execution_pre_state.pre_state_root_hash;
-
-        match self
-            .engine_state
-            .get_system_contract_registry(CorrelationId::default(), state_root_hash)
-        {
-            Ok(system_contract_registry) => {
-                self.system_contract_registry = Some(system_contract_registry);
-            }
-            Err(error) => {
-                error!(%state_root_hash, %error, "unable to initialize contract runtime with a system contract registry");
-                return Err(error.into());
-            }
-        }
-
-        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -741,6 +737,9 @@ impl ContractRuntime {
         protocol_version: ProtocolVersion,
         finalized_block: FinalizedBlock,
         deploys: Vec<Deploy>,
+        activation_point: ActivationPoint,
+        key_block_height_for_activation_point: u64,
+        prune_batch_size: u64,
         mut meta_block_state: MetaBlockState,
     ) where
         REv: From<ContractRuntimeRequest>
@@ -766,6 +765,9 @@ impl ContractRuntime {
                 current_pre_state,
                 finalized_block,
                 deploys,
+                activation_point.era_id(),
+                key_block_height_for_activation_point,
+                prune_batch_size,
             )
         })
         .await
@@ -921,6 +923,25 @@ impl ContractRuntime {
     pub(crate) fn engine_state(&self) -> &Arc<EngineState<LmdbGlobalState>> {
         &self.engine_state
     }
+
+    #[inline]
+    fn try_init_system_contract_registry_cache(&mut self) {
+        // The system contract registry is stable so we can use the latest state root hash that we
+        // know from the execution pre-state to try and initialize it
+        let state_root_hash = self
+            .execution_pre_state
+            .lock()
+            .expect("ContractRuntime: execution_pre_state poisoned mutex")
+            .pre_state_root_hash;
+
+        // Try to cache system contract registry if possible.
+        if self.system_contract_registry.is_none() {
+            self.system_contract_registry = self
+                .engine_state
+                .get_system_contract_registry(CorrelationId::new(), state_root_hash)
+                .ok();
+        };
+    }
 }
 
 #[cfg(test)]
@@ -934,7 +955,7 @@ mod tests {
     };
     use casper_hashing::{ChunkWithProof, Digest};
     use casper_types::{
-        account::AccountHash, bytesrepr, CLValue, Key, ProtocolVersion, StoredValue,
+        account::AccountHash, bytesrepr, CLValue, EraId, Key, ProtocolVersion, StoredValue,
     };
     use prometheus::Registry;
     use tempfile::tempdir;
@@ -942,7 +963,7 @@ mod tests {
     use crate::{
         components::fetcher::FetchResponse,
         contract_runtime::{Config as ContractRuntimeConfig, ContractRuntime},
-        types::{ChunkingError, TrieOrChunk, TrieOrChunkId, ValueOrChunk},
+        types::{ActivationPoint, ChunkingError, TrieOrChunk, TrieOrChunkId, ValueOrChunk},
     };
 
     use super::ContractRuntimeError;
@@ -1005,8 +1026,11 @@ mod tests {
             10,
             10,
             10,
+            ActivationPoint::EraId(EraId::from(2)),
+            5,
             true,
             1,
+            None,
             &Registry::default(),
         )
         .unwrap();

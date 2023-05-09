@@ -496,6 +496,8 @@ pub(crate) enum StorageRequest {
         /// written.
         responder: Responder<bool>,
     },
+    /// Retrieve the height of the final block of the previous protocol version, if known.
+    GetKeyBlockHeightForActivationPoint { responder: Responder<Option<u64>> },
 }
 
 impl Display for StorageRequest {
@@ -612,6 +614,12 @@ impl Display for StorageRequest {
             StorageRequest::PutExecutedBlock { block, .. } => {
                 write!(formatter, "put executed block {}", block.hash(),)
             }
+            StorageRequest::GetKeyBlockHeightForActivationPoint { .. } => {
+                write!(
+                    formatter,
+                    "get key block height for current activation point"
+                )
+            }
         }
     }
 }
@@ -637,18 +645,14 @@ impl Display for MakeBlockExecutableRequest {
 /// * the block header and the actual block are persisted in storage,
 /// * all of its deploys are persisted in storage, and
 /// * the global state root the block refers to has no missing dependencies locally.
-
-// Note - this is a request rather than an announcement as the chain synchronizer needs to ensure
-// the request has been completed before it can exit, i.e. it awaits the response. Otherwise, the
-// joiner reactor might exit before handling the announcement and it would go un-actioned.
 #[derive(Debug, Serialize)]
-pub(crate) struct BlockCompleteConfirmationRequest {
+pub(crate) struct MarkBlockCompletedRequest {
     pub block_height: u64,
     /// Responds `true` if the block was not previously marked complete.
     pub responder: Responder<bool>,
 }
 
-impl Display for BlockCompleteConfirmationRequest {
+impl Display for MarkBlockCompletedRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "block completed: height {}", self.block_height)
     }
@@ -699,7 +703,7 @@ pub(crate) enum RpcRequest {
         /// retrieve it.
         only_from_available_block_range: bool,
         /// Responder to call with the result.
-        responder: Responder<Option<BlockWithMetadata>>,
+        responder: Responder<Option<Box<BlockWithMetadata>>>,
     },
     /// Return transfers for block by hash (if any).
     GetBlockTransfers {
@@ -752,7 +756,7 @@ pub(crate) enum RpcRequest {
         /// Whether to return finalized approvals.
         finalized_approvals: bool,
         /// Responder to call with the result.
-        responder: Responder<Option<(Deploy, DeployMetadataExt)>>,
+        responder: Responder<Option<Box<(Deploy, DeployMetadataExt)>>>,
     },
     /// Return the connected peers.
     GetPeers {
@@ -888,6 +892,8 @@ pub(crate) enum ContractRuntimeRequest {
         finalized_block: FinalizedBlock,
         /// The deploys for that `FinalizedBlock`
         deploys: Vec<Deploy>,
+        /// The key block height for the current protocol version's activation point.
+        key_block_height_for_activation_point: u64,
         meta_block_state: MetaBlockState,
     },
     /// A query request.
@@ -1025,7 +1031,7 @@ pub(crate) struct FetcherRequest<T: FetchItem> {
     /// The peer id of the peer to be asked if the item is not held locally
     pub(crate) peer: NodeId,
     /// Metadata used during validation of the fetched item.
-    pub(crate) validation_metadata: T::ValidationMetadata,
+    pub(crate) validation_metadata: Box<T::ValidationMetadata>,
     /// Responder to call with the result.
     pub(crate) responder: Responder<FetchResult<T>>,
 }
@@ -1058,7 +1064,6 @@ impl Display for TrieAccumulatorRequest {
 pub(crate) struct SyncGlobalStateRequest {
     pub(crate) block_hash: BlockHash,
     pub(crate) state_root_hash: Digest,
-    pub(crate) peers: HashSet<NodeId>,
     #[serde(skip)]
     pub(crate) responder:
         Responder<Result<GlobalStateSynchronizerResponse, GlobalStateSynchronizerError>>,
@@ -1145,6 +1150,7 @@ impl Display for ReactorStatusRequest {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum BlockAccumulatorRequest {
     GetPeersForBlock {
         block_hash: BlockHash,
@@ -1154,7 +1160,11 @@ pub(crate) enum BlockAccumulatorRequest {
 
 impl Display for BlockAccumulatorRequest {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "block accumulator request")
+        match self {
+            BlockAccumulatorRequest::GetPeersForBlock { block_hash, .. } => {
+                write!(f, "get peers for {}", block_hash)
+            }
+        }
     }
 }
 
@@ -1162,7 +1172,7 @@ impl Display for BlockAccumulatorRequest {
 pub(crate) enum BlockSynchronizerRequest {
     NeedNext,
     DishonestPeers,
-    SyncGlobalStates(Vec<(BlockHash, Digest)>, Vec<NodeId>),
+    SyncGlobalStates(Vec<(BlockHash, Digest)>),
     Status {
         responder: Responder<BlockSynchronizerStatus>,
     },
@@ -1180,7 +1190,7 @@ impl Display for BlockSynchronizerRequest {
             BlockSynchronizerRequest::Status { .. } => {
                 write!(f, "block synchronizer request: status")
             }
-            BlockSynchronizerRequest::SyncGlobalStates(_, _) => {
+            BlockSynchronizerRequest::SyncGlobalStates(_) => {
                 write!(f, "request to sync global states")
             }
         }

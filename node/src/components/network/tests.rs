@@ -12,6 +12,7 @@ use std::{
 
 use derive_more::From;
 use futures::FutureExt;
+use muxink::backpressured::Ticket;
 use prometheus::Registry;
 use reactor::ReactorEvent;
 use serde::{Deserialize, Serialize};
@@ -123,11 +124,13 @@ impl From<ContractRuntimeRequest> for Event {
 }
 
 impl FromIncoming<Message> for Event {
-    fn from_incoming(sender: NodeId, payload: Message) -> Self {
+    fn from_incoming(sender: NodeId, payload: Message, ticket: Ticket) -> Self {
         match payload {
-            Message::AddressGossiper(message) => {
-                Event::AddressGossiperIncoming(GossiperIncoming { sender, message })
-            }
+            Message::AddressGossiper(message) => Event::AddressGossiperIncoming(GossiperIncoming {
+                sender,
+                message: Box::new(message),
+                ticket: Arc::new(ticket),
+            }),
         }
     }
 }
@@ -305,7 +308,7 @@ fn network_is_complete(
     for (node_id, node) in nodes {
         let net = &node.reactor().inner().net;
         // TODO: Ensure the connections are symmetrical.
-        let peers: HashSet<_> = net.peers().into_iter().map(|(k, _)| k).collect();
+        let peers: HashSet<_> = net.peers().into_keys().collect();
 
         let mut missing = expected.difference(&peers);
 

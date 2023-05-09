@@ -30,7 +30,7 @@ use derive_more::From;
 use serde::{Deserialize, Serialize};
 use tracing::{info, trace};
 
-use casper_types::{EraId, PublicKey, Timestamp};
+use casper_types::{EraId, Timestamp};
 
 use crate::{
     components::Component,
@@ -63,20 +63,52 @@ pub(crate) use era_supervisor::{debug::EraDump, EraSupervisor};
 #[cfg(test)]
 pub(crate) use highway_core::highway::Vertex as HighwayVertex;
 pub(crate) use leader_sequence::LeaderSequence;
-pub(crate) use protocols::highway::HighwayMessage;
+pub(crate) use protocols::highway::{max_rounds_per_era, HighwayMessage};
 pub(crate) use validator_change::ValidatorChange;
 
 const COMPONENT_NAME: &str = "consensus";
 
-/// A message to be handled by the consensus protocol instance in a particular era.
-#[derive(DataSize, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) enum EraMessage<C>
-where
-    C: Context,
-{
-    Zug(Box<protocols::zug::Message<C>>),
-    Highway(Box<HighwayMessage<C>>),
+#[allow(clippy::integer_arithmetic)]
+mod relaxed {
+    // This module exists solely to exempt the `EnumDiscriminants` macro generated code from the
+    // module-wide `clippy::integer_arithmetic` lint.
+
+    use casper_types::{EraId, PublicKey};
+    use datasize::DataSize;
+    use serde::{Deserialize, Serialize};
+    use strum::EnumDiscriminants;
+
+    use super::{protocols, traits::Context, ClContext, HighwayMessage};
+
+    /// A message to be handled by the consensus protocol instance in a particular era.
+    #[derive(
+        DataSize, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnumDiscriminants, Hash,
+    )]
+    #[strum_discriminants(derive(strum::EnumIter))]
+    pub(crate) enum EraMessage<C>
+    where
+        C: Context,
+    {
+        Zug(Box<protocols::zug::Message<C>>),
+        Highway(Box<HighwayMessage<C>>),
+    }
+
+    #[derive(DataSize, Clone, Serialize, Deserialize, EnumDiscriminants)]
+    #[strum_discriminants(derive(strum::EnumIter))]
+    pub(crate) enum ConsensusMessage {
+        /// A protocol message, to be handled by the instance in the specified era.
+        Protocol {
+            era_id: EraId,
+            payload: EraMessage<ClContext>,
+        },
+        /// A request for evidence against the specified validator, from any era that is still
+        /// bonded in `era_id`.
+        EvidenceRequest { era_id: EraId, pub_key: PublicKey },
+    }
 }
+pub(crate) use relaxed::{
+    ConsensusMessage, ConsensusMessageDiscriminants, EraMessage, EraMessageDiscriminants,
+};
 
 impl<C: Context> EraMessage<C> {
     /// Returns the message for the Zug protocol, or an error if it is for a different protocol.
@@ -110,7 +142,7 @@ impl<C: Context> From<HighwayMessage<C>> for EraMessage<C> {
 }
 
 /// A request to be handled by the consensus protocol instance in a particular era.
-#[derive(DataSize, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, From)]
+#[derive(DataSize, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, From)]
 pub(crate) enum EraRequest<C>
 where
     C: Context,
@@ -127,18 +159,6 @@ impl<C: Context> EraRequest<C> {
     }
 }
 
-#[derive(DataSize, Clone, Serialize, Deserialize)]
-pub(crate) enum ConsensusMessage {
-    /// A protocol message, to be handled by the instance in the specified era.
-    Protocol {
-        era_id: EraId,
-        payload: EraMessage<ClContext>,
-    },
-    /// A request for evidence against the specified validator, from any era that is still bonded
-    /// in `era_id`.
-    EvidenceRequest { era_id: EraId, pub_key: PublicKey },
-}
-
 /// A protocol request message, to be handled by the instance in the specified era.
 #[derive(DataSize, Clone, Serialize, Deserialize)]
 pub(crate) struct ConsensusRequestMessage {
@@ -148,12 +168,12 @@ pub(crate) struct ConsensusRequestMessage {
 
 /// An ID to distinguish different timers. What they are used for is specific to each consensus
 /// protocol implementation.
-#[derive(DataSize, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DataSize, Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct TimerId(pub u8);
 
 /// An ID to distinguish queued actions. What they are used for is specific to each consensus
 /// protocol implementation.
-#[derive(DataSize, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(DataSize, Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ActionId(pub u8);
 
 #[derive(DataSize, Debug, From)]
@@ -259,7 +279,11 @@ impl Display for ConsensusRequestMessage {
 impl Display for Event {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Event::Incoming(ConsensusMessageIncoming { sender, message }) => {
+            Event::Incoming(ConsensusMessageIncoming {
+                sender,
+                message,
+                ticket: _,
+            }) => {
                 write!(f, "message from {:?}: {}", sender, message)
             }
             Event::DemandIncoming(demand) => {
@@ -364,6 +388,64 @@ impl<REv> ReactorEventT for REv where
 {
 }
 
+mod specimen_support {
+    use crate::utils::specimen::{largest_variant, Cache, LargestSpecimen, SizeEstimator};
+
+    use super::{
+        ClContext, ConsensusMessage, ConsensusMessageDiscriminants, ConsensusRequestMessage,
+        EraMessage, EraMessageDiscriminants, EraRequest,
+    };
+
+    impl LargestSpecimen for ConsensusMessage {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            largest_variant::<Self, ConsensusMessageDiscriminants, _, _>(estimator, |variant| {
+                match variant {
+                    ConsensusMessageDiscriminants::Protocol => ConsensusMessage::Protocol {
+                        era_id: LargestSpecimen::largest_specimen(estimator, cache),
+                        payload: LargestSpecimen::largest_specimen(estimator, cache),
+                    },
+                    ConsensusMessageDiscriminants::EvidenceRequest => {
+                        ConsensusMessage::EvidenceRequest {
+                            era_id: LargestSpecimen::largest_specimen(estimator, cache),
+                            pub_key: LargestSpecimen::largest_specimen(estimator, cache),
+                        }
+                    }
+                }
+            })
+        }
+    }
+
+    impl LargestSpecimen for ConsensusRequestMessage {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            ConsensusRequestMessage {
+                era_id: LargestSpecimen::largest_specimen(estimator, cache),
+                payload: LargestSpecimen::largest_specimen(estimator, cache),
+            }
+        }
+    }
+
+    impl LargestSpecimen for EraRequest<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            EraRequest::Zug(LargestSpecimen::largest_specimen(estimator, cache))
+        }
+    }
+
+    impl LargestSpecimen for EraMessage<ClContext> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            largest_variant::<Self, EraMessageDiscriminants, _, _>(estimator, |variant| {
+                match variant {
+                    EraMessageDiscriminants::Zug => {
+                        EraMessage::Zug(LargestSpecimen::largest_specimen(estimator, cache))
+                    }
+                    EraMessageDiscriminants::Highway => {
+                        EraMessage::Highway(LargestSpecimen::largest_specimen(estimator, cache))
+                    }
+                }
+            })
+        }
+    }
+}
+
 impl<REv> Component<REv> for EraSupervisor
 where
     REv: ReactorEventT,
@@ -386,8 +468,14 @@ where
             Event::Action { era_id, action_id } => {
                 self.handle_action(effect_builder, rng, era_id, action_id)
             }
-            Event::Incoming(ConsensusMessageIncoming { sender, message }) => {
-                self.handle_message(effect_builder, rng, sender, message)
+            Event::Incoming(ConsensusMessageIncoming {
+                sender,
+                message,
+                ticket,
+            }) => {
+                let rv = self.handle_message(effect_builder, rng, sender, *message);
+                drop(ticket);
+                rv
             }
             Event::DemandIncoming(ConsensusDemand {
                 sender,

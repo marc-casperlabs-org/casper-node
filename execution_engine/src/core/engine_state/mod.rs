@@ -13,6 +13,7 @@ pub mod execution_result;
 pub mod genesis;
 pub mod get_bids;
 pub mod op;
+mod prune;
 pub mod query;
 pub mod run_genesis_request;
 pub mod step;
@@ -22,7 +23,7 @@ pub mod upgrade;
 
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, BTreeSet},
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
     convert::TryFrom,
     rc::Rc,
 };
@@ -30,7 +31,7 @@ use std::{
 use num::Zero;
 use num_rational::Ratio;
 use once_cell::sync::Lazy;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use casper_hashing::Digest;
 use casper_types::{
@@ -39,10 +40,10 @@ use casper_types::{
     contracts::NamedKeys,
     system::{
         auction::{
-            EraValidators, UnbondingPurse, ARG_ERA_END_TIMESTAMP_MILLIS, ARG_EVICTED_VALIDATORS,
-            ARG_REWARD_FACTORS, ARG_VALIDATOR_PUBLIC_KEYS, AUCTION_DELAY_KEY, ERA_ID_KEY,
-            LOCKED_FUNDS_PERIOD_KEY, SEIGNIORAGE_RECIPIENTS_SNAPSHOT_KEY, UNBONDING_DELAY_KEY,
-            VALIDATOR_SLOTS_KEY,
+            EraValidators, UnbondingPurse, WithdrawPurse, ARG_ERA_END_TIMESTAMP_MILLIS,
+            ARG_EVICTED_VALIDATORS, ARG_REWARD_FACTORS, ARG_VALIDATOR_PUBLIC_KEYS,
+            AUCTION_DELAY_KEY, ERA_ID_KEY, LOCKED_FUNDS_PERIOD_KEY,
+            SEIGNIORAGE_RECIPIENTS_SNAPSHOT_KEY, UNBONDING_DELAY_KEY, VALIDATOR_SLOTS_KEY,
         },
         handle_payment,
         mint::{self, ROUND_SEIGNIORAGE_RATE_KEY},
@@ -66,6 +67,7 @@ pub use self::{
     execution_result::{ExecutionResult, ForcedTransferResult},
     genesis::{ExecConfig, GenesisAccount, GenesisConfig, GenesisSuccess},
     get_bids::{GetBidsRequest, GetBidsResult},
+    prune::{PruneConfig, PruneResult},
     query::{QueryRequest, QueryResult},
     run_genesis_request::RunGenesisRequest,
     step::{RewardItem, SlashItem, StepError, StepRequest, StepSuccess},
@@ -92,6 +94,7 @@ use crate::{
             StateReader,
         },
         trie::{merkle_proof::TrieMerkleProof, TrieRaw},
+        trie_store::operations::DeleteResult,
     },
     system::auction,
 };
@@ -136,7 +139,7 @@ impl EngineState<LmdbGlobalState> {
     /// Flushes the LMDB environment to disk when manual sync is enabled in the config.toml.
     pub fn flush_environment(&self) -> Result<(), lmdb::Error> {
         if self.state.environment.is_manual_sync_enabled() {
-            self.state.environment.sync()?
+            self.state.environment.sync()?;
         }
         Ok(())
     }
@@ -149,7 +152,7 @@ impl EngineState<LmdbGlobalState> {
         }
     }
 
-    /// Writes state cached in an EngineState<ScratchEngineState> to LMDB.
+    /// Writes state cached in an `EngineState<ScratchEngineState>` to LMDB.
     pub fn write_scratch_to_db(
         &self,
         state_root_hash: Digest,
@@ -366,6 +369,7 @@ where
         }
 
         if let Some(new_auction_delay) = upgrade_config.new_auction_delay() {
+            debug!(%new_auction_delay, "Auction delay changed as part of the upgrade");
             let auction_contract = tracking_copy
                 .borrow_mut()
                 .get_contract(correlation_id, *auction_hash)?;
@@ -472,6 +476,14 @@ where
                     .ok_or(Error::FailedToGetWithdrawPurses)?
                     .to_owned();
 
+                // Ensure that sufficient balance exists for all unbond purses that are to be
+                // migrated.
+                Self::fail_upgrade_if_withdraw_purses_lack_sufficient_balance(
+                    &withdraw_purses,
+                    &tracking_copy,
+                    correlation_id,
+                )?;
+
                 let unbonding_purses: Vec<UnbondingPurse> = withdraw_purses
                     .into_iter()
                     .filter_map(|purse| {
@@ -507,6 +519,40 @@ where
             tracking_copy.borrow_mut().write(unbonding_delay_key, value);
         }
 
+        // Perform global state migrations that require state.
+
+        if let Some(activation_point) = upgrade_config.activation_point() {
+            // The highest stored era is the immediate predecessor of the activation point.
+            let highest_era_info_id = activation_point.saturating_sub(1);
+            let highest_era_info_key = Key::EraInfo(highest_era_info_id);
+
+            let get_result = tracking_copy
+                .borrow_mut()
+                .get(correlation_id, &highest_era_info_key)
+                .map_err(|error| Error::Exec(error.into()))?;
+
+            match get_result {
+                Some(stored_value @ StoredValue::EraInfo(_)) => {
+                    tracking_copy
+                        .borrow_mut()
+                        .write(Key::EraSummary, stored_value);
+                }
+                Some(other_stored_value) => {
+                    // This should not happen as we only write EraInfo variants.
+                    error!(stored_value_type_name=%other_stored_value.type_name(),
+                        "EraInfo key contains unexpected StoredValue variant");
+                    return Err(Error::ProtocolUpgrade(
+                        ProtocolUpgradeError::UnexpectedStoredValueVariant,
+                    ));
+                }
+                None => {
+                    // Can't find key
+                    // Most likely this chain did not yet ran an auction, or recently completed a
+                    // prune
+                }
+            };
+        }
+
         let execution_effect = tracking_copy.borrow().effect();
 
         // commit
@@ -524,6 +570,41 @@ where
             post_state_hash,
             execution_effect,
         })
+    }
+
+    /// Commit a prune of leaf nodes from the tip of the merkle trie.
+    pub fn commit_prune(
+        &self,
+        correlation_id: CorrelationId,
+        prune_config: PruneConfig,
+    ) -> Result<PruneResult, Error> {
+        let state_root_hash = prune_config.pre_state_hash();
+
+        // Validate the state root hash just to make sure we can safely short circuit in case the
+        // list of keys is empty.
+        match self.tracking_copy(state_root_hash)? {
+            None => return Ok(PruneResult::RootNotFound),
+            Some(_tracking_copy) => {}
+        };
+
+        let keys_to_delete = prune_config.keys_to_prune();
+        if keys_to_delete.is_empty() {
+            return Ok(PruneResult::Success {
+                post_state_hash: state_root_hash,
+            });
+        }
+
+        match self
+            .state
+            .delete_keys(correlation_id, state_root_hash, keys_to_delete)
+        {
+            Ok(DeleteResult::Deleted(post_state_hash)) => {
+                Ok(PruneResult::Success { post_state_hash })
+            }
+            Ok(DeleteResult::DoesNotExist) => Ok(PruneResult::DoesNotExist),
+            Ok(DeleteResult::RootNotFound) => Ok(PruneResult::RootNotFound),
+            Err(error) => Err(Error::Exec(error.into())),
+        }
     }
 
     /// Creates a new tracking copy instance.
@@ -2086,7 +2167,7 @@ where
             .borrow_mut()
             .get_system_contracts(correlation_id)
             .map_err(|error| {
-                error!(%error, "Failed to retrieve system contract registry");
+                warn!(%error, "Failed to retrieve system contract registry");
                 Error::MissingSystemContractRegistry
             });
         result
@@ -2188,6 +2269,52 @@ where
             .read_with_proof(correlation_id, &key)
             .map_err(Into::into)?;
         maybe_proof.ok_or(Error::MissingChecksumRegistry)
+    }
+
+    /// As the name suggests, used to ensure commit_upgrade fails if we lack sufficient balances.
+    fn fail_upgrade_if_withdraw_purses_lack_sufficient_balance(
+        withdraw_purses: &[WithdrawPurse],
+        tracking_copy: &Rc<RefCell<TrackingCopy<<S as StateProvider>::Reader>>>,
+        correlation_id: CorrelationId,
+    ) -> Result<(), Error> {
+        let mut balances = BTreeMap::new();
+        for purse in withdraw_purses.iter() {
+            match balances.entry(*purse.bonding_purse()) {
+                Entry::Vacant(entry) => {
+                    entry.insert(*purse.amount());
+                }
+                Entry::Occupied(mut entry) => {
+                    let value = entry.get_mut();
+                    let new_val = value.checked_add(*purse.amount()).ok_or_else(|| {
+                        Error::Mint("overflowed a u512 during unbond migration".into())
+                    })?;
+                    *value = new_val;
+                }
+            }
+        }
+        for (unbond_purse_uref, unbond_amount) in balances {
+            let key = match tracking_copy
+                .borrow_mut()
+                .get_purse_balance_key(correlation_id, unbond_purse_uref.into())
+            {
+                Ok(key) => key,
+                Err(_) => return Err(Error::Mint("purse balance not found".into())),
+            };
+            let current_balance = tracking_copy
+                .borrow_mut()
+                .get_purse_balance(CorrelationId::new(), key)?
+                .value();
+
+            if unbond_amount > current_balance {
+                // If we don't have enough balance to migrate, the only thing we can do
+                // is to fail the upgrade.
+                error!(%current_balance, %unbond_purse_uref, %unbond_amount, "commit_upgrade failed during migration - insufficient in purse to unbond");
+                return Err(Error::Mint(
+                    "insufficient balance detected while migrating unbond purses".into(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

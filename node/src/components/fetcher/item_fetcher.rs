@@ -11,8 +11,13 @@ use super::{Error, Event, FetchResponder, FetchedData, ItemHandle, Metrics};
 use crate::{
     components::{fetcher::FetchItem, network::blocklist::BlocklistJustification},
     effect::{
-        announcements::PeerBehaviorAnnouncement,
-        requests::{ContractRuntimeRequest, NetworkRequest, StorageRequest},
+        announcements::{
+            FetchedNewBlockAnnouncement, FetchedNewFinalitySignatureAnnouncement,
+            PeerBehaviorAnnouncement,
+        },
+        requests::{
+            BlockAccumulatorRequest, ContractRuntimeRequest, NetworkRequest, StorageRequest,
+        },
         EffectBuilder, EffectExt, Effects,
     },
     protocol::Message,
@@ -40,42 +45,47 @@ pub(super) trait ItemFetcher<T: FetchItem + 'static> {
     fn peer_timeout(&self) -> Duration;
 
     /// We've been asked to fetch the item by another component of this node.  We'll try to get it
-    /// from our own storage component first, and if that fails, we'll send a request to `peer` for
-    /// the item.
+    /// locally first (generally from our own storage component), and if that fails, we'll send a
+    /// request to `peer` for the item.
     fn fetch<REv>(
         &self,
         effect_builder: EffectBuilder<REv>,
         id: T::Id,
         peer: NodeId,
-        validation_metadata: T::ValidationMetadata,
+        validation_metadata: Box<T::ValidationMetadata>,
         responder: FetchResponder<T>,
     ) -> Effects<Event<T>>
     where
-        REv: From<StorageRequest> + From<ContractRuntimeRequest> + Send,
+        REv: From<StorageRequest>
+            + From<BlockAccumulatorRequest>
+            + From<ContractRuntimeRequest>
+            + Send,
     {
-        Self::get_from_storage(effect_builder, id.clone()).event(move |result| {
-            Event::GetFromStorageResult {
-                id,
-                peer,
-                validation_metadata,
-                maybe_item: Box::new(result),
-                responder,
-            }
+        Self::get_locally(effect_builder, id.clone()).event(move |result| Event::GetLocallyResult {
+            id,
+            peer,
+            validation_metadata,
+            // TODO: Change signature of `get_locally` to return boxed item instead of boxing here.
+            maybe_item: result.map(Box::new),
+            responder,
         })
     }
 
-    /// Handles attempting to get the item from storage.
-    async fn get_from_storage<REv>(effect_builder: EffectBuilder<REv>, id: T::Id) -> Option<T>
+    /// Handles attempting to get the item locally.
+    async fn get_locally<REv>(effect_builder: EffectBuilder<REv>, id: T::Id) -> Option<T>
     where
-        REv: From<StorageRequest> + From<ContractRuntimeRequest> + Send;
+        REv: From<StorageRequest>
+            + From<BlockAccumulatorRequest>
+            + From<ContractRuntimeRequest>
+            + Send;
 
-    /// Handles the `Err` case for a `Result` of attempting to get the item from storage.
-    fn failed_to_get_from_storage<REv>(
+    /// Handles the `Err` case for a `Result` of attempting to get the item locally.
+    fn failed_to_get_locally<REv>(
         &mut self,
         effect_builder: EffectBuilder<REv>,
         id: T::Id,
         peer: NodeId,
-        validation_metadata: T::ValidationMetadata,
+        validation_metadata: Box<T::ValidationMetadata>,
         responder: FetchResponder<T>,
     ) -> Effects<Event<T>>
     where
@@ -88,12 +98,12 @@ pub(super) trait ItemFetcher<T: FetchItem + 'static> {
         match item_handles.entry(id.clone()).or_default().entry(peer) {
             Entry::Occupied(mut entry) => {
                 let handle = entry.get_mut();
-                if *handle.validation_metadata() != validation_metadata {
+                if handle.validation_metadata() != &*validation_metadata {
                     let error = Error::ValidationMetadataMismatch {
-                        id,
+                        id: Box::new(id),
                         peer,
                         current: Box::new(handle.validation_metadata().clone()),
-                        new: Box::new(validation_metadata),
+                        new: validation_metadata,
                     };
                     error!(%error, "failed to fetch");
                     return responder.respond(Err(error)).ignore();
@@ -118,7 +128,10 @@ pub(super) trait ItemFetcher<T: FetchItem + 'static> {
 
                 self.signal(
                     id.clone(),
-                    Err(Error::CouldNotConstructGetRequest { id, peer }),
+                    Err(Error::CouldNotConstructGetRequest {
+                        id: Box::new(id),
+                        peer,
+                    }),
                     peer,
                 )
             }
@@ -256,6 +269,15 @@ pub(super) trait ItemFetcher<T: FetchItem + 'static> {
     ) -> StoringState<'a, T>
     where
         REv: From<StorageRequest> + Send;
+
+    async fn announce_fetched_new_item<REv>(
+        _effect_builder: EffectBuilder<REv>,
+        item: T,
+        peer: NodeId,
+    ) where
+        REv: From<FetchedNewBlockAnnouncement>
+            + From<FetchedNewFinalitySignatureAnnouncement>
+            + Send;
 
     /// Handles signalling responders with the item or an error.
     fn signal(

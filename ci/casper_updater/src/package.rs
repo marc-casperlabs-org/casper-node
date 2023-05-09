@@ -42,11 +42,11 @@ impl PackageConsts for CargoPackage {
     const MANIFEST: &'static str = "Cargo.toml";
 
     fn name_regex() -> &'static Regex {
-        &*MANIFEST_NAME_REGEX
+        &MANIFEST_NAME_REGEX
     }
 
     fn version_regex() -> &'static Regex {
-        &*MANIFEST_VERSION_REGEX
+        &MANIFEST_VERSION_REGEX
     }
 }
 
@@ -56,11 +56,11 @@ impl PackageConsts for AssemblyScriptPackage {
     const MANIFEST: &'static str = "package.json";
 
     fn name_regex() -> &'static Regex {
-        &*PACKAGE_JSON_NAME_REGEX
+        &PACKAGE_JSON_NAME_REGEX
     }
 
     fn version_regex() -> &'static Regex {
-        &*PACKAGE_JSON_VERSION_REGEX
+        &PACKAGE_JSON_VERSION_REGEX
     }
 }
 
@@ -82,6 +82,10 @@ impl Package {
         package
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     fn new<P: AsRef<Path>, T: PackageConsts>(
         relative_path: P,
         dependent_files: &'static Vec<DependentFile>,
@@ -98,10 +102,11 @@ impl Package {
                     relative_path.as_ref().display()
                 )
             });
+        let contents = manifest.contents();
 
         let find_value = |regex: &Regex| {
             regex
-                .captures(manifest.contents())
+                .captures(&contents)
                 .unwrap_or_else(|| {
                     panic!(
                         "should find package name and version in {}",

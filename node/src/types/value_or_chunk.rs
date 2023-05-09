@@ -137,7 +137,7 @@ impl Display for HashingTrieRaw {
 
 impl HashingTrieRaw {
     fn hash(&self) -> Digest {
-        *self.hash.get_or_init(|| Digest::hash(&self.inner.inner()))
+        *self.hash.get_or_init(|| Digest::hash(self.inner.inner()))
     }
 
     pub fn inner(&self) -> &TrieRaw {
@@ -264,5 +264,27 @@ mod tests {
         let retrieved_bytes: Bytes = data.into();
 
         assert_eq!(input, retrieved_bytes);
+    }
+}
+
+mod specimen_support {
+    use crate::utils::specimen::{Cache, LargestSpecimen, SizeEstimator};
+
+    use super::{TrieOrChunkId, ValueOrChunk};
+
+    impl LargestSpecimen for TrieOrChunkId {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            TrieOrChunkId(
+                LargestSpecimen::largest_specimen(estimator, cache),
+                LargestSpecimen::largest_specimen(estimator, cache),
+            )
+        }
+    }
+
+    impl<V> LargestSpecimen for ValueOrChunk<V> {
+        fn largest_specimen<E: SizeEstimator>(estimator: &E, cache: &mut Cache) -> Self {
+            // By definition, the chunk is always the largest (8MiB):
+            ValueOrChunk::ChunkWithProof(LargestSpecimen::largest_specimen(estimator, cache))
+        }
     }
 }

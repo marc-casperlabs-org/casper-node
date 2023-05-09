@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, iter, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    fs, iter,
+    sync::Arc,
+    time::Duration,
+};
 
 use either::Either;
 use num::Zero;
@@ -22,6 +27,7 @@ use crate::{
         },
         gossiper, network, storage,
         upgrade_watcher::NextUpgrade,
+        ComponentState,
     },
     effect::{
         incoming::ConsensusMessageIncoming,
@@ -41,7 +47,7 @@ use crate::{
         ActivationPoint, BlockHeader, BlockPayload, Chainspec, ChainspecRawBytes, Deploy, ExitCode,
         NodeRng,
     },
-    utils::{External, Loadable, Source, RESOURCES_PATH},
+    utils::{extract_metric_names, External, Loadable, Source, RESOURCES_PATH},
     WithDir,
 };
 
@@ -226,17 +232,15 @@ fn has_completed_era(era_id: EraId) -> impl Fn(&Nodes) -> bool {
 }
 
 fn is_ping(event: &MainEvent) -> bool {
-    if let MainEvent::ConsensusMessageIncoming(ConsensusMessageIncoming {
-        message: ConsensusMessage::Protocol { payload, .. },
-        ..
-    }) = event
-    {
-        return matches!(
-            payload.clone().try_into_highway(),
-            Ok(HighwayMessage::<ClContext>::NewVertex(HighwayVertex::Ping(
-                _
-            )))
-        );
+    if let MainEvent::ConsensusMessageIncoming(ConsensusMessageIncoming { message, .. }) = event {
+        if let ConsensusMessage::Protocol { ref payload, .. } = **message {
+            return matches!(
+                payload.clone().try_into_highway(),
+                Ok(HighwayMessage::<ClContext>::NewVertex(HighwayVertex::Ping(
+                    _
+                )))
+            );
+        }
     }
     false
 }
@@ -578,6 +582,11 @@ async fn dont_upgrade_without_switch_block() {
 
     let mut rng = crate::new_rng();
 
+    eprintln!(
+        "Running 'dont_upgrade_without_switch_block' test with rng={}",
+        rng
+    );
+
     const NETWORK_SIZE: usize = 2;
     const INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -656,8 +665,8 @@ async fn dont_upgrade_without_switch_block() {
             .expect("failed to read from storage")
             .expect("missing switch block")
             .take_header();
-        assert_eq!(EraId::from(1), header.era_id());
-        assert!(header.is_switch_block());
+        assert_eq!(EraId::from(1), header.era_id(), "era should be 1");
+        assert!(header.is_switch_block(), "header should be switch block");
     }
 }
 
@@ -702,15 +711,15 @@ async fn should_store_finalized_approvals() {
     let mut deploy_alice_bob_charlie = deploy_alice_bob.clone();
     let mut deploy_bob_alice = deploy_alice_bob.clone();
 
-    deploy_alice_bob.sign(&*alice_secret_key);
-    deploy_alice_bob.sign(&*bob_secret_key);
+    deploy_alice_bob.sign(&alice_secret_key);
+    deploy_alice_bob.sign(&bob_secret_key);
 
-    deploy_alice_bob_charlie.sign(&*alice_secret_key);
-    deploy_alice_bob_charlie.sign(&*bob_secret_key);
-    deploy_alice_bob_charlie.sign(&*charlie_secret_key);
+    deploy_alice_bob_charlie.sign(&alice_secret_key);
+    deploy_alice_bob_charlie.sign(&bob_secret_key);
+    deploy_alice_bob_charlie.sign(&charlie_secret_key);
 
-    deploy_bob_alice.sign(&*bob_secret_key);
-    deploy_bob_alice.sign(&*alice_secret_key);
+    deploy_bob_alice.sign(&bob_secret_key);
+    deploy_bob_alice.sign(&alice_secret_key);
 
     // We will be testing the correct sequence of approvals against the deploy signed by Bob and
     // Alice.
@@ -896,7 +905,11 @@ async fn empty_block_validation_regression() {
     let switch_blocks = SwitchBlocks::collect(net.nodes(), 2);
 
     // Nobody actually double-signed. The accusations should have had no effect.
-    assert_eq!(switch_blocks.equivocators(0), []);
+    assert_eq!(
+        switch_blocks.equivocators(0),
+        [],
+        "expected no equivocators"
+    );
     // If the malicious validator was the first proposer, all their Highway units might be invalid,
     // because they all refer to the invalid proposal, so they might get flagged as inactive. No
     // other validators should be considered inactive.
@@ -905,4 +918,64 @@ async fn empty_block_validation_regression() {
         [inactive_validator] if malicious_validator == *inactive_validator => {}
         inactive => panic!("unexpected inactive validators: {:?}", inactive),
     }
+}
+
+#[tokio::test]
+async fn all_metrics_from_1_5_are_present() {
+    testing::init_logging();
+
+    let mut rng = crate::new_rng();
+
+    let mut chain = TestChain::new(&mut rng, 2, None);
+    let mut net = chain
+        .create_initialized_network(&mut rng)
+        .await
+        .expect("network initialization failed");
+
+    net.settle_on_component_state(
+        &mut rng,
+        "rest_server",
+        &ComponentState::Initialized,
+        Duration::from_secs(59),
+    )
+    .await;
+
+    // Get the node ID.
+    let node_id = *net.nodes().keys().next().unwrap();
+
+    let rest_addr = net.nodes()[&node_id]
+        .main_reactor()
+        .rest_server
+        .bind_address();
+
+    // We let the entire network run in the background, until our request completes.
+    let finish_cranking = net.crank_until_stopped(rng);
+
+    let metrics_response = reqwest::Client::builder()
+        .build()
+        .expect("failed to build client")
+        .get(format!("http://localhost:{}/metrics", rest_addr.port()))
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await
+        .expect("request failed")
+        .error_for_status()
+        .expect("error response on metrics request")
+        .text()
+        .await
+        .expect("error retrieving text on metrics request");
+
+    let (_net, _rng) = finish_cranking.await;
+
+    let actual = extract_metric_names(&metrics_response);
+    let raw_1_5 = fs::read_to_string(RESOURCES_PATH.join("metrics-1.5.txt"))
+        .expect("could not read 1.5 metrics snapshot");
+    let metrics_1_5 = extract_metric_names(&raw_1_5);
+
+    let missing: HashSet<_> = metrics_1_5.difference(&actual).collect();
+    assert!(
+        missing.is_empty(),
+        "missing 1.5 metrics in current metrics set: {:?}",
+        missing
+    );
 }

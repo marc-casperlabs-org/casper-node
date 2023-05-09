@@ -1,13 +1,14 @@
 use std::fmt::{self, Debug, Display, Formatter};
 
-#[cfg(test)]
-use casper_types::testing::TestRng;
 use datasize::DataSize;
 use hex_fmt::HexFmt;
 use once_cell::sync::Lazy;
 #[cfg(test)]
 use rand::Rng;
 use serde::{de::Error as SerdeError, Deserialize, Deserializer, Serialize, Serializer};
+
+#[cfg(test)]
+use casper_types::testing::TestRng;
 
 use crate::{rpcs::docs::DocExample, tls::KeyFingerprint};
 
@@ -78,7 +79,7 @@ static NODE_ID: Lazy<NodeId> =
 
 impl DocExample for NodeId {
     fn doc_example() -> &'static Self {
-        &*NODE_ID
+        &NODE_ID
     }
 }
 

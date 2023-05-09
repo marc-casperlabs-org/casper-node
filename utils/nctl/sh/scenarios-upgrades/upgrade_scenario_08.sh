@@ -35,7 +35,7 @@ function _main()
 
     # Set initial protocol version for use later.
     INITIAL_PROTOCOL_VERSION=$(get_node_protocol_version 1)
-    local ACTIVATION_POINT="$(get_chain_era)"
+    local ACTIVATION_POINT="$(($(get_chain_era) + NCTL_DEFAULT_ERA_ACTIVATION_OFFSET))"
 
     _step_03 "$STAGE_ID" "$ACTIVATION_POINT"
     _step_04 "6"
@@ -64,7 +64,7 @@ function _step_01()
     source "$NCTL/sh/node/start.sh" node=all
 }
 
-# Step 02: Await era-id >= 1.
+# Step 02: Await for genesis
 function _step_02()
 {
     log_step_upgrades 2 "awaiting genesis era completion"

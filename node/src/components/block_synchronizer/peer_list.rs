@@ -72,52 +72,46 @@ impl PeerList {
         self.peer_list.retain(|_, v| *v != PeerQuality::Dishonest);
     }
 
-    pub(super) fn disqualify_peer(&mut self, peer: Option<NodeId>) {
-        if let Some(peer_id) = peer {
-            self.peer_list.insert(peer_id, PeerQuality::Dishonest);
-        }
+    pub(super) fn disqualify_peer(&mut self, peer: NodeId) {
+        self.peer_list.insert(peer, PeerQuality::Dishonest);
     }
 
-    pub(super) fn promote_peer(&mut self, peer: Option<NodeId>) {
-        if let Some(peer_id) = peer {
-            debug!("BlockSynchronizer: promoting peer {:?}", peer_id);
-            // vacant should be unreachable
-            match self.peer_list.entry(peer_id) {
-                Entry::Vacant(_) => {
-                    self.peer_list.insert(peer_id, PeerQuality::Unknown);
-                }
-                Entry::Occupied(entry) => match entry.get() {
-                    PeerQuality::Dishonest => {
-                        // no change -- this is terminal
-                    }
-                    PeerQuality::Unreliable | PeerQuality::Unknown => {
-                        self.peer_list.insert(peer_id, PeerQuality::Reliable);
-                    }
-                    PeerQuality::Reliable => {
-                        // no change -- this is the best
-                    }
-                },
+    pub(super) fn promote_peer(&mut self, peer: NodeId) {
+        debug!("BlockSynchronizer: promoting peer {:?}", peer);
+        // vacant should be unreachable
+        match self.peer_list.entry(peer) {
+            Entry::Vacant(_) => {
+                self.peer_list.insert(peer, PeerQuality::Unknown);
             }
+            Entry::Occupied(entry) => match entry.get() {
+                PeerQuality::Dishonest => {
+                    // no change -- this is terminal
+                }
+                PeerQuality::Unreliable | PeerQuality::Unknown => {
+                    self.peer_list.insert(peer, PeerQuality::Reliable);
+                }
+                PeerQuality::Reliable => {
+                    // no change -- this is the best
+                }
+            },
         }
     }
 
-    pub(super) fn demote_peer(&mut self, peer: Option<NodeId>) {
-        if let Some(peer_id) = peer {
-            debug!("BlockSynchronizer: demoting peer {:?}", peer_id);
-            // vacant should be unreachable
-            match self.peer_list.entry(peer_id) {
-                Entry::Vacant(_) => {
+    pub(super) fn demote_peer(&mut self, peer: NodeId) {
+        debug!("BlockSynchronizer: demoting peer {:?}", peer);
+        // vacant should be unreachable
+        match self.peer_list.entry(peer) {
+            Entry::Vacant(_) => {
+                // no change
+            }
+            Entry::Occupied(entry) => match entry.get() {
+                PeerQuality::Dishonest | PeerQuality::Unreliable => {
                     // no change
                 }
-                Entry::Occupied(entry) => match entry.get() {
-                    PeerQuality::Dishonest | PeerQuality::Unreliable => {
-                        // no change
-                    }
-                    PeerQuality::Reliable | PeerQuality::Unknown => {
-                        self.peer_list.insert(peer_id, PeerQuality::Unreliable);
-                    }
-                },
-            }
+                PeerQuality::Reliable | PeerQuality::Unknown => {
+                    self.peer_list.insert(peer, PeerQuality::Unreliable);
+                }
+            },
         }
     }
 
@@ -165,8 +159,10 @@ impl PeerList {
     }
 
     pub(super) fn qualified_peers(&self, rng: &mut NodeRng) -> Vec<NodeId> {
-        let up_to = self.max_simultaneous_peers as usize;
+        self.qualified_peers_up_to(rng, self.max_simultaneous_peers as usize)
+    }
 
+    pub(super) fn qualified_peers_up_to(&self, rng: &mut NodeRng, up_to: usize) -> Vec<NodeId> {
         // get most useful up to limit
         let mut peers = self.get_random_peers_by_quality(rng, up_to, PeerQuality::Reliable);
 

@@ -5,7 +5,7 @@ use crate::{
     types::{Block, FinalizedBlock},
     utils,
 };
-use casper_types::{testing::TestRng, EraId, ProtocolVersion, TimeDiff};
+use casper_types::{testing::TestRng, EraId, TimeDiff};
 use prometheus::Registry;
 use rand::Rng;
 
@@ -73,7 +73,8 @@ fn create_invalid_deploys(rng: &mut TestRng, size: usize) -> Vec<Deploy> {
     deploys
 }
 
-// Checks sizes of the deploy_buffer containers. Also checks the metrics recorded.
+/// Checks sizes of the deploy_buffer containers. Also checks the metrics recorded.
+#[track_caller]
 fn assert_container_sizes(
     deploy_buffer: &DeployBuffer,
     expected_buffer: usize,
@@ -307,99 +308,6 @@ fn get_appendable_block(
 }
 
 #[test]
-fn have_full_ttl_worth_of_deploys() {
-    let mut rng = TestRng::new();
-    let deploy_config = DeployConfig::default();
-    let mut deploy_buffer =
-        DeployBuffer::new(deploy_config, Config::default(), &Registry::new()).unwrap();
-
-    // register some blocks that have deploys
-    for i in 2..10 {
-        let deploys = create_valid_deploys(&mut rng, 10, DeployType::Random, None, None);
-        let block = FinalizedBlock::random_with_specifics(
-            &mut rng,
-            EraId::from(0),
-            i,
-            false,
-            Timestamp::now(),
-            deploys.iter(),
-        );
-        deploy_buffer.register_block_finalized(&block);
-    }
-    assert_container_sizes(&deploy_buffer, 80, 80, 0);
-
-    // create a switch block
-    let switch_block = Block::random_with_specifics(
-        &mut rng,
-        EraId::from(0),
-        10,
-        ProtocolVersion::V1_0_0,
-        true,
-        None,
-    );
-    deploy_buffer.register_block(&switch_block);
-    // buffer should not have ttl worth of deploys since all blocks were created with recent
-    // timestamps
-    assert!(!deploy_buffer.have_full_ttl_of_deploys(switch_block.header()));
-
-    // add genesis block that is earlier than max ttl
-    let deploys = create_valid_deploys(
-        &mut rng,
-        10,
-        DeployType::Random,
-        Some(
-            switch_block
-                .timestamp()
-                .saturating_sub(deploy_config.max_ttl)
-                .saturating_sub(TimeDiff::from_seconds(20)),
-        ),
-        None,
-    );
-    let block = FinalizedBlock::random_with_specifics(
-        &mut rng,
-        EraId::from(0),
-        0,
-        false,
-        switch_block
-            .timestamp()
-            .saturating_sub(deploy_config.max_ttl)
-            .saturating_sub(TimeDiff::from_seconds(15)),
-        deploys.iter(),
-    );
-    deploy_buffer.register_block_finalized(&block);
-    // buffer should not have ttl worth of deploys since it is missing block at height 1
-    assert!(!deploy_buffer.have_full_ttl_of_deploys(switch_block.header()));
-
-    // add block at height 1 that is earlier than max ttl
-    let deploys = create_valid_deploys(
-        &mut rng,
-        10,
-        DeployType::Random,
-        Some(
-            switch_block
-                .timestamp()
-                .saturating_sub(deploy_config.max_ttl)
-                .saturating_sub(TimeDiff::from_seconds(10)),
-        ),
-        None,
-    );
-    let block = FinalizedBlock::random_with_specifics(
-        &mut rng,
-        EraId::from(0),
-        1,
-        false,
-        switch_block
-            .timestamp()
-            .saturating_sub(deploy_config.max_ttl)
-            .saturating_sub(TimeDiff::from_seconds(5)),
-        deploys.iter(),
-    );
-    deploy_buffer.register_block_finalized(&block);
-    // buffer should indicate it has full ttl worth of deploys
-    assert!(deploy_buffer.have_full_ttl_of_deploys(switch_block.header()));
-}
-
-#[test]
 fn register_deploys_and_blocks() {
     let mut rng = TestRng::new();
     let mut deploy_buffer =
@@ -560,21 +468,30 @@ async fn expire_deploys_and_check_announcement() {
         .iter()
         .for_each(|deploy| deploy_buffer.register_deploy(deploy.clone()));
     assert_container_sizes(&deploy_buffer, expired_deploys.len(), 0, 0);
-    let expired_deploy_hashes: HashSet<_> = expired_deploys
-        .iter()
-        .map(|deploy| *deploy.hash())
-        .collect();
+
+    // include the last expired deploy in a block and register it
+    let block = Block::random_with_deploys(&mut rng, expired_deploys.last());
+    deploy_buffer.register_block(&block);
+    assert_container_sizes(&deploy_buffer, expired_deploys.len(), 1, 0);
 
     // generate and register some valid deploys
     let deploys = create_valid_deploys(&mut rng, num_deploys, DeployType::Transfer, None, None);
     deploys
         .iter()
         .for_each(|deploy| deploy_buffer.register_deploy(deploy.clone()));
-    assert_container_sizes(&deploy_buffer, deploys.len() + expired_deploys.len(), 0, 0);
+    assert_container_sizes(&deploy_buffer, deploys.len() + expired_deploys.len(), 1, 0);
 
     // expire deploys and check that they were announced as expired
     let mut effects = deploy_buffer.expire(effect_builder);
     tokio::spawn(effects.remove(0)).await.unwrap();
+
+    // the deploys which should be announced as expired are all the expired ones not in a block,
+    // i.e. all but the last one of `expired_deploys`
+    let expired_deploy_hashes: HashSet<_> = expired_deploys
+        .iter()
+        .take(expired_deploys.len() - 1)
+        .map(|deploy| *deploy.hash())
+        .collect();
     reactor
         .expect_deploy_buffer_expire_announcement(&expired_deploy_hashes)
         .await;

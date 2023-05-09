@@ -8,7 +8,7 @@ use std::{
 };
 
 use derive_more::{Display, From};
-use num_rational::Ratio;
+use muxink::backpressured::Ticket;
 use prometheus::Registry;
 use rand::Rng;
 use reactor::ReactorEvent;
@@ -18,7 +18,7 @@ use thiserror::Error;
 use tokio::time;
 use tracing::debug;
 
-use casper_types::{testing::TestRng, ProtocolVersion, TimeDiff};
+use casper_types::{testing::TestRng, EraId, ProtocolVersion, TimeDiff};
 
 use super::*;
 use crate::{
@@ -161,9 +161,9 @@ impl reactor::Reactor for Reactor {
         let storage_withdir = WithDir::new(storage_tempdir.path(), storage_config);
         let storage = Storage::new(
             &storage_withdir,
-            Ratio::new(1, 3),
             None,
             ProtocolVersion::from_parts(1, 0, 0),
+            EraId::default(),
             "test",
             MAX_TTL,
             RECENT_ERA_COUNT,
@@ -635,7 +635,8 @@ async fn should_not_gossip_old_stored_item_again() {
         .process_injected_effect_on(&node_0, |effect_builder| {
             let event = Event::DeployGossiperIncoming(GossiperIncoming {
                 sender: node_ids[1],
-                message: Message::Gossip(deploy.gossip_id()),
+                message: Box::new(Message::Gossip(deploy.gossip_id())),
+                ticket: Arc::new(Ticket::create_dummy()),
             });
             effect_builder
                 .into_inner()
@@ -707,7 +708,8 @@ async fn should_ignore_unexpected_message(message_type: Unexpected) {
         .process_injected_effect_on(&node_0, |effect_builder| {
             let event = Event::DeployGossiperIncoming(GossiperIncoming {
                 sender: node_ids[1],
-                message,
+                message: Box::new(message),
+                ticket: Arc::new(Ticket::create_dummy()),
             });
             effect_builder
                 .into_inner()

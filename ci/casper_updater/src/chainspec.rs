@@ -25,10 +25,11 @@ impl Chainspec {
         let chainspec_path = crate::root_dir().join("resources/production/chainspec.toml");
 
         let chainspec = &regex_data::chainspec_protocol_version::DEPENDENT_FILES[0];
+        let contents = chainspec.contents();
 
         let find_value = |regex: &Regex| {
             regex
-                .captures(chainspec.contents())
+                .captures(&contents)
                 .unwrap_or_else(|| {
                     panic!(
                         "should find protocol version and activation point in {}",
@@ -47,8 +48,8 @@ impl Chainspec {
                 .to_string()
         };
 
-        let protocol_version = find_value(&*regex_data::chainspec_protocol_version::REGEX);
-        let current_activation_point = find_value(&*regex_data::chainspec_activation_point::REGEX);
+        let protocol_version = find_value(&regex_data::chainspec_protocol_version::REGEX);
+        let current_activation_point = find_value(&regex_data::chainspec_activation_point::REGEX);
         let current_protocol_version = SemVer::try_from(protocol_version.as_str())
             .expect("should parse current protocol version");
 

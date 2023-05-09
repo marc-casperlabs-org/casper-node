@@ -1,3 +1,5 @@
+#![allow(clippy::boxed_local)] // We use boxed locals to pass on event data unchanged.
+
 //! Reactor core.
 //!
 //! Any long running instance of the node application uses an event-dispatch pattern: Events are
@@ -47,7 +49,7 @@ use datasize::DataSize;
 use erased_serde::Serialize as ErasedSerialize;
 use futures::{future::BoxFuture, FutureExt};
 use once_cell::sync::Lazy;
-use prometheus::{self, Histogram, HistogramOpts, IntCounter, IntGauge, Registry};
+use prometheus::{self, Histogram, IntCounter, IntGauge, Registry};
 use quanta::{Clock, IntoNanoseconds};
 use serde::Serialize;
 use signal_hook::consts::signal::{SIGINT, SIGQUIT, SIGTERM};
@@ -55,6 +57,11 @@ use stats_alloc::{Stats, INSTRUMENTED_SYSTEM};
 use tokio::time::{Duration, Instant};
 use tracing::{debug, debug_span, error, info, instrument, trace, warn, Span};
 use tracing_futures::Instrument;
+
+#[cfg(test)]
+use crate::components::ComponentState;
+#[cfg(target_os = "linux")]
+use crate::utils::rlimit::{Limit, OpenFiles, ResourceLimit};
 
 use crate::{
     components::{
@@ -72,10 +79,9 @@ use crate::{
         ChainspecRawBytes, Deploy, ExitCode, FinalitySignature, LegacyDeploy, NodeId, SyncLeap,
         TrieOrChunk,
     },
-    unregister_metric,
     utils::{
         self,
-        rlimit::{Limit, OpenFiles, ResourceLimit},
+        registered_metric::{RegisteredMetric, RegistryExt},
         Fuse, SharedFuse, WeightedRoundRobin,
     },
     NodeRng, TERMINATION_REQUESTED,
@@ -279,6 +285,15 @@ pub(crate) trait Reactor: Sized {
 
     /// Instructs the reactor to update performance metrics, if any.
     fn update_metrics(&mut self, _event_queue_handle: EventQueueHandle<Self::Event>) {}
+
+    /// Returns the state of a named components.
+    ///
+    /// May return `None` if the component cannot be found, or if the reactor does not support
+    /// querying component states.
+    #[cfg(test)]
+    fn get_component_state(&self, _name: &str) -> Option<&ComponentState> {
+        None
+    }
 }
 
 /// A reactor event type.
@@ -361,34 +376,30 @@ where
 #[derive(Debug)]
 struct RunnerMetrics {
     /// Total number of events processed.
-    events: IntCounter,
+    events: RegisteredMetric<IntCounter>,
     /// Histogram of how long it took to dispatch an event.
-    event_dispatch_duration: Histogram,
+    event_dispatch_duration: RegisteredMetric<Histogram>,
     /// Total allocated RAM in bytes, as reported by stats_alloc.
-    allocated_ram_bytes: IntGauge,
+    allocated_ram_bytes: RegisteredMetric<IntGauge>,
     /// Total consumed RAM in bytes, as reported by sys-info.
-    consumed_ram_bytes: IntGauge,
+    consumed_ram_bytes: RegisteredMetric<IntGauge>,
     /// Total system RAM in bytes, as reported by sys-info.
-    total_ram_bytes: IntGauge,
-    /// Handle to the metrics registry, in case we need to unregister.
-    registry: Registry,
+    total_ram_bytes: RegisteredMetric<IntGauge>,
 }
 
 impl RunnerMetrics {
     /// Create and register new runner metrics.
     fn new(registry: &Registry) -> Result<Self, prometheus::Error> {
-        let events = IntCounter::new(
+        let events = registry.new_int_counter(
             "runner_events",
             "running total count of events handled by this reactor",
         )?;
 
         // Create an event dispatch histogram, putting extra emphasis on the area between 1-10 us.
-        let event_dispatch_duration = Histogram::with_opts(
-            HistogramOpts::new(
-                "event_dispatch_duration",
-                "time in nanoseconds to dispatch an event",
-            )
-            .buckets(vec![
+        let event_dispatch_duration = registry.new_histogram(
+            "event_dispatch_duration",
+            "time in nanoseconds to dispatch an event",
+            vec![
                 100.0,
                 500.0,
                 1_000.0,
@@ -408,39 +419,23 @@ impl RunnerMetrics {
                 1_000_000.0,
                 2_000_000.0,
                 5_000_000.0,
-            ]),
+            ],
         )?;
 
         let allocated_ram_bytes =
-            IntGauge::new("allocated_ram_bytes", "total allocated ram in bytes")?;
+            registry.new_int_gauge("allocated_ram_bytes", "total allocated ram in bytes")?;
         let consumed_ram_bytes =
-            IntGauge::new("consumed_ram_bytes", "total consumed ram in bytes")?;
-        let total_ram_bytes = IntGauge::new("total_ram_bytes", "total system ram in bytes")?;
-
-        registry.register(Box::new(events.clone()))?;
-        registry.register(Box::new(event_dispatch_duration.clone()))?;
-        registry.register(Box::new(allocated_ram_bytes.clone()))?;
-        registry.register(Box::new(consumed_ram_bytes.clone()))?;
-        registry.register(Box::new(total_ram_bytes.clone()))?;
+            registry.new_int_gauge("consumed_ram_bytes", "total consumed ram in bytes")?;
+        let total_ram_bytes =
+            registry.new_int_gauge("total_ram_bytes", "total system ram in bytes")?;
 
         Ok(RunnerMetrics {
             events,
             event_dispatch_duration,
-            registry: registry.clone(),
             allocated_ram_bytes,
             consumed_ram_bytes,
             total_ram_bytes,
         })
-    }
-}
-
-impl Drop for RunnerMetrics {
-    fn drop(&mut self) {
-        unregister_metric!(self.registry, self.events);
-        unregister_metric!(self.registry, self.event_dispatch_duration);
-        unregister_metric!(self.registry, self.allocated_ram_bytes);
-        unregister_metric!(self.registry, self.consumed_ram_bytes);
-        unregister_metric!(self.registry, self.total_ram_bytes);
     }
 }
 
@@ -557,11 +552,11 @@ where
         let event_desc = event.description();
 
         // Create another span for tracing the processing of one event.
-        Span::current().record("ev", &self.current_event_id);
+        Span::current().record("ev", self.current_event_id);
 
         // If we know the ancestor of an event, record it.
         if let Some(ancestor) = ancestor {
-            Span::current().record("a", &ancestor.get());
+            Span::current().record("a", ancestor.get());
         }
 
         // Dispatch the event, then execute the resulting effect.
@@ -915,7 +910,7 @@ fn handle_get_response<R>(
     effect_builder: EffectBuilder<<R as Reactor>::Event>,
     rng: &mut NodeRng,
     sender: NodeId,
-    message: NetResponse,
+    message: Box<NetResponse>,
 ) -> Effects<<R as Reactor>::Event>
 where
     R: Reactor,
@@ -932,7 +927,7 @@ where
         + From<block_accumulator::Event>
         + From<PeerBehaviorAnnouncement>,
 {
-    match message {
+    match *message {
         NetResponse::Deploy(ref serialized_item) => handle_fetch_response::<R, Deploy>(
             reactor,
             effect_builder,

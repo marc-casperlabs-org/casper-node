@@ -108,6 +108,7 @@ use std::{
 
 use datasize::DataSize;
 use futures::{channel::oneshot, future::BoxFuture, FutureExt};
+use muxink::backpressured::Ticket;
 use once_cell::sync::Lazy;
 use serde::{Serialize, Serializer};
 use smallvec::{smallvec, SmallVec};
@@ -159,21 +160,17 @@ use crate::{
 use announcements::{
     BlockAccumulatorAnnouncement, ConsensusAnnouncement, ContractRuntimeAnnouncement,
     ControlAnnouncement, DeployAcceptorAnnouncement, DeployBufferAnnouncement, FatalAnnouncement,
-    GossiperAnnouncement, MetaBlockAnnouncement, PeerBehaviorAnnouncement, QueueDumpFormat,
-    RpcServerAnnouncement, UpgradeWatcherAnnouncement,
+    FetchedNewBlockAnnouncement, FetchedNewFinalitySignatureAnnouncement, GossiperAnnouncement,
+    MetaBlockAnnouncement, PeerBehaviorAnnouncement, QueueDumpFormat, RpcServerAnnouncement,
+    UnexecutedBlockAnnouncement, UpgradeWatcherAnnouncement,
 };
 use diagnostics_port::DumpConsensusStateRequest;
 use requests::{
-    BeginGossipRequest, BlockAccumulatorRequest, BlockCompleteConfirmationRequest,
-    BlockSynchronizerRequest, BlockValidationRequest, ChainspecRawBytesRequest, ConsensusRequest,
-    FetcherRequest, MakeBlockExecutableRequest, NetworkInfoRequest, NetworkRequest,
-    ReactorStatusRequest, StorageRequest, SyncGlobalStateRequest, TrieAccumulatorRequest,
-    UpgradeWatcherRequest,
-};
-
-use self::{
-    announcements::UnexecutedBlockAnnouncement,
-    requests::{ContractRuntimeRequest, DeployBufferRequest, MetricsRequest, SetNodeStopRequest},
+    BeginGossipRequest, BlockAccumulatorRequest, BlockSynchronizerRequest, BlockValidationRequest,
+    ChainspecRawBytesRequest, ConsensusRequest, ContractRuntimeRequest, DeployBufferRequest,
+    FetcherRequest, MakeBlockExecutableRequest, MarkBlockCompletedRequest, MetricsRequest,
+    NetworkInfoRequest, NetworkRequest, ReactorStatusRequest, SetNodeStopRequest, StorageRequest,
+    SyncGlobalStateRequest, TrieAccumulatorRequest, UpgradeWatcherRequest,
 };
 
 /// A resource that will never be available, thus trying to acquire it will wait forever.
@@ -815,15 +812,26 @@ impl<REv> EffectBuilder<REv> {
     }
 
     /// Announces an incoming network message.
-    pub(crate) async fn announce_incoming<P>(self, sender: NodeId, payload: P)
+    pub(crate) async fn announce_incoming<P>(self, sender: NodeId, payload: P, ticket: Ticket)
     where
-        REv: FromIncoming<P>,
+        REv: FromIncoming<P> + Send,
+        P: 'static,
     {
+        // TODO: Remove demands entirely as they are no longer needed with tickets.
+        let reactor_event =
+            match <REv as FromIncoming<P>>::try_demand_from_incoming(self, sender, payload) {
+                Ok((rev, demand_has_been_satisfied)) => {
+                    tokio::spawn(async move {
+                        demand_has_been_satisfied.await;
+                        drop(ticket);
+                    });
+                    rev
+                }
+                Err(payload) => <REv as FromIncoming<P>>::from_incoming(sender, payload, ticket),
+            };
+
         self.event_queue
-            .schedule(
-                <REv as FromIncoming<P>>::from_incoming(sender, payload),
-                QueueKind::NetworkIncoming,
-            )
+            .schedule(reactor_event, QueueKind::NetworkIncoming)
             .await
     }
 
@@ -906,10 +914,10 @@ impl<REv> EffectBuilder<REv> {
     /// global state.
     pub(crate) async fn mark_block_completed(self, block_height: u64) -> bool
     where
-        REv: From<BlockCompleteConfirmationRequest>,
+        REv: From<MarkBlockCompletedRequest>,
     {
         self.make_request(
-            |responder| BlockCompleteConfirmationRequest {
+            |responder| MarkBlockCompletedRequest {
                 block_height,
                 responder,
             },
@@ -1364,7 +1372,6 @@ impl<REv> EffectBuilder<REv> {
         self,
         block_hash: BlockHash,
         state_root_hash: Digest,
-        peers: HashSet<NodeId>,
     ) -> Result<GlobalStateSynchronizerResponse, GlobalStateSynchronizerError>
     where
         REv: From<SyncGlobalStateRequest>,
@@ -1373,7 +1380,6 @@ impl<REv> EffectBuilder<REv> {
             |responder| SyncGlobalStateRequest {
                 block_hash,
                 state_root_hash,
-                peers,
                 responder,
             },
             QueueKind::SyncGlobalState,
@@ -1603,30 +1609,24 @@ impl<REv> EffectBuilder<REv> {
     /// Gets the requested finality signature from storage.
     pub(crate) async fn get_finality_signature_from_storage(
         self,
-        id: FinalitySignatureId,
+        id: Box<FinalitySignatureId>,
     ) -> Option<FinalitySignature>
     where
         REv: From<StorageRequest>,
     {
         self.make_request(
-            |responder| StorageRequest::GetFinalitySignature {
-                id: Box::new(id),
-                responder,
-            },
+            |responder| StorageRequest::GetFinalitySignature { id, responder },
             QueueKind::FromStorage,
         )
         .await
     }
 
-    pub(crate) async fn is_finality_signature_stored(self, id: FinalitySignatureId) -> bool
+    pub(crate) async fn is_finality_signature_stored(self, id: Box<FinalitySignatureId>) -> bool
     where
         REv: From<StorageRequest>,
     {
         self.make_request(
-            |responder| StorageRequest::IsFinalitySignatureStored {
-                id: Box::new(id),
-                responder,
-            },
+            |responder| StorageRequest::IsFinalitySignatureStored { id, responder },
             QueueKind::FromStorage,
         )
         .await
@@ -1671,7 +1671,7 @@ impl<REv> EffectBuilder<REv> {
         self,
         id: T::Id,
         peer: NodeId,
-        validation_metadata: T::ValidationMetadata,
+        validation_metadata: Box<T::ValidationMetadata>,
     ) -> FetchResult<T>
     where
         REv: From<FetcherRequest<T>>,
@@ -1730,13 +1730,27 @@ impl<REv> EffectBuilder<REv> {
         deploys: Vec<Deploy>,
         meta_block_state: MetaBlockState,
     ) where
-        REv: From<ContractRuntimeRequest>,
+        REv: From<StorageRequest> + From<ContractRuntimeRequest>,
     {
+        // Get the key block height for the current protocol version's activation point, i.e. the
+        // height of the final block of the previous protocol version.
+        let key_block_height_for_activation_point = self
+            .make_request(
+                |responder| StorageRequest::GetKeyBlockHeightForActivationPoint { responder },
+                QueueKind::FromStorage,
+            )
+            .await
+            .unwrap_or_else(|| {
+                warn!("key block height for current activation point unknown");
+                0
+            });
+
         self.event_queue
             .schedule(
                 ContractRuntimeRequest::EnqueueBlockForExecution {
                     finalized_block,
                     deploys,
+                    key_block_height_for_activation_point,
                     meta_block_state,
                 },
                 QueueKind::ContractRuntime,
@@ -1888,13 +1902,13 @@ impl<REv> EffectBuilder<REv> {
     /// Retrieves an `Account` from global state if present.
     pub(crate) async fn get_account_from_global_state(
         self,
-        prestate_hash: Digest,
+        state_root_hash: Digest,
         account_key: Key,
     ) -> Option<Account>
     where
         REv: From<ContractRuntimeRequest>,
     {
-        let query_request = QueryRequest::new(prestate_hash, account_key, vec![]);
+        let query_request = QueryRequest::new(state_root_hash, account_key, vec![]);
         match self.query_global_state(query_request).await {
             Ok(QueryResult::Success { value, .. }) => value.as_account().cloned(),
             Ok(_) | Err(_) => None,
@@ -1904,13 +1918,13 @@ impl<REv> EffectBuilder<REv> {
     /// Retrieves the balance of a purse, returns `None` if no purse is present.
     pub(crate) async fn check_purse_balance(
         self,
-        prestate_hash: Digest,
+        state_root_hash: Digest,
         main_purse: URef,
     ) -> Option<U512>
     where
         REv: From<ContractRuntimeRequest>,
     {
-        let balance_request = BalanceRequest::new(prestate_hash, main_purse);
+        let balance_request = BalanceRequest::new(state_root_hash, main_purse);
         match self.get_balance(balance_request).await {
             Ok(balance_result) => {
                 if let Some(motes) = balance_result.motes() {
@@ -1925,16 +1939,19 @@ impl<REv> EffectBuilder<REv> {
     /// Retrieves an `Contract` from global state if present.
     pub(crate) async fn get_contract_for_validation(
         self,
-        prestate_hash: Digest,
+        state_root_hash: Digest,
         query_key: Key,
         path: Vec<String>,
-    ) -> Option<Contract>
+    ) -> Option<Box<Contract>>
     where
         REv: From<ContractRuntimeRequest>,
     {
-        let query_request = QueryRequest::new(prestate_hash, query_key, path);
+        let query_request = QueryRequest::new(state_root_hash, query_key, path);
         match self.query_global_state(query_request).await {
-            Ok(QueryResult::Success { value, .. }) => value.as_contract().cloned(),
+            Ok(QueryResult::Success { value, .. }) => {
+                // TODO: Extending `StoredValue` with an `into_contract` would reduce cloning here.
+                value.as_contract().map(|c| Box::new(c.clone()))
+            }
             Ok(_) | Err(_) => None,
         }
     }
@@ -1942,16 +1959,18 @@ impl<REv> EffectBuilder<REv> {
     /// Retrieves an `ContractPackage` from global state if present.
     pub(crate) async fn get_contract_package_for_validation(
         self,
-        prestate_hash: Digest,
+        state_root_hash: Digest,
         query_key: Key,
         path: Vec<String>,
-    ) -> Option<ContractPackage>
+    ) -> Option<Box<ContractPackage>>
     where
         REv: From<ContractRuntimeRequest>,
     {
-        let query_request = QueryRequest::new(prestate_hash, query_key, path);
+        let query_request = QueryRequest::new(state_root_hash, query_key, path);
         match self.query_global_state(query_request).await {
-            Ok(QueryResult::Success { value, .. }) => value.as_contract_package().cloned(),
+            Ok(QueryResult::Success { value, .. }) => {
+                value.as_contract_package().map(|pkg| Box::new(pkg.clone()))
+            }
             Ok(_) | Err(_) => None,
         }
     }
@@ -2093,6 +2112,40 @@ impl<REv> EffectBuilder<REv> {
             .schedule(
                 ControlAnnouncement::ShutdownDueToUserRequest,
                 QueueKind::Control,
+            )
+            .await;
+    }
+
+    /// Announce that a block which wasn't previously stored on this node has been fetched and
+    /// stored.
+    pub(crate) async fn announce_fetched_new_block(self, block: Arc<Block>, peer: NodeId)
+    where
+        REv: From<FetchedNewBlockAnnouncement>,
+    {
+        self.event_queue
+            .schedule(
+                FetchedNewBlockAnnouncement { block, peer },
+                QueueKind::Fetch,
+            )
+            .await;
+    }
+
+    /// Announce that a finality signature which wasn't previously stored on this node has been
+    /// fetched and stored.
+    pub(crate) async fn announce_fetched_new_finality_signature(
+        self,
+        finality_signature: Box<FinalitySignature>,
+        peer: NodeId,
+    ) where
+        REv: From<FetchedNewFinalitySignatureAnnouncement>,
+    {
+        self.event_queue
+            .schedule(
+                FetchedNewFinalitySignatureAnnouncement {
+                    finality_signature,
+                    peer,
+                },
+                QueueKind::Fetch,
             )
             .await;
     }

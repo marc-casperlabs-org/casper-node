@@ -12,8 +12,7 @@ use crate::{
         runtime::stack,
     },
     shared::wasm_prep,
-    storage,
-    storage::global_state::CommitError,
+    storage::{self, global_state::CommitError},
 };
 
 /// Engine state errors.
@@ -67,7 +66,7 @@ pub enum Error {
     InvalidKeyVariant,
     /// Protocol upgrade error.
     #[error("Protocol upgrade error: {0}")]
-    ProtocolUpgrade(ProtocolUpgradeError),
+    ProtocolUpgrade(#[from] ProtocolUpgradeError),
     /// Invalid deploy item variant.
     #[error("Unsupported deploy item variant: {0}")]
     InvalidDeployItemVariant(String),
@@ -146,9 +145,9 @@ impl From<mint::Error> for Error {
     }
 }
 
-impl From<GenesisError> for Error {
-    fn from(genesis_error: GenesisError) -> Self {
-        Self::Genesis(Box::new(genesis_error))
+impl From<Box<GenesisError>> for Error {
+    fn from(genesis_error: Box<GenesisError>) -> Self {
+        Self::Genesis(genesis_error)
     }
 }
 

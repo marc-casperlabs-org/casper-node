@@ -13,9 +13,10 @@ use crate::{
     effect::{EffectBuilder, EffectExt, Effects},
     fatal,
     reactor::main_reactor::{
-        catch_up::CatchUpInstruction, keep_up::KeepUpInstruction,
-        upgrade_shutdown::UpgradeShutdownInstruction, upgrading_instruction::UpgradingInstruction,
-        utils, validate::ValidateInstruction, MainEvent, MainReactor, ReactorState,
+        catch_up::CatchUpInstruction, genesis_instruction::GenesisInstruction,
+        keep_up::KeepUpInstruction, upgrade_shutdown::UpgradeShutdownInstruction,
+        upgrading_instruction::UpgradingInstruction, utils, validate::ValidateInstruction,
+        MainEvent, MainReactor, ReactorState,
     },
     types::{BlockHash, BlockPayload, FinalizedBlock, MetaBlockState},
     NodeRng,
@@ -50,22 +51,31 @@ impl MainReactor {
         effect_builder: EffectBuilder<MainEvent>,
         rng: &mut NodeRng,
     ) -> (Duration, Effects<MainEvent>) {
+        const INITIALIZATION_DELAY_SPEED_UP_FACTOR: u64 = 4;
+
         match self.state {
-            ReactorState::Initialize => match self.initialize_next_component(effect_builder) {
-                Some(effects) => (self.control_logic_default_delay.into(), effects),
-                None => {
-                    if false == self.net.has_sufficient_fully_connected_peers() {
-                        info!("Initialize: awaiting sufficient fully-connected peers");
-                        return (self.control_logic_default_delay.into(), Effects::new());
+            ReactorState::Initialize => {
+                // We can be more greedy when cranking through the initialization process as the
+                // progress is expected to happen quickly.
+                let initialization_logic_default_delay =
+                    self.control_logic_default_delay / INITIALIZATION_DELAY_SPEED_UP_FACTOR;
+
+                match self.initialize_next_component(effect_builder) {
+                    Some(effects) => (initialization_logic_default_delay.into(), effects),
+                    None => {
+                        if false == self.net.has_sufficient_fully_connected_peers() {
+                            info!("Initialize: awaiting sufficient fully-connected peers");
+                            return (initialization_logic_default_delay.into(), Effects::new());
+                        }
+                        if let Err(msg) = self.refresh_contract_runtime() {
+                            return (Duration::ZERO, fatal!(effect_builder, "{}", msg).ignore());
+                        }
+                        info!("Initialize: switch to CatchUp");
+                        self.state = ReactorState::CatchUp;
+                        (Duration::ZERO, Effects::new())
                     }
-                    if let Err(msg) = self.refresh_contract_runtime() {
-                        return (Duration::ZERO, fatal!(effect_builder, "{}", msg).ignore());
-                    }
-                    info!("Initialize: switch to CatchUp");
-                    self.state = ReactorState::CatchUp;
-                    (Duration::ZERO, Effects::new())
                 }
-            },
+            }
             ReactorState::Upgrading => match self.upgrading_instruction() {
                 UpgradingInstruction::CheckLater(msg, wait) => {
                     debug!("Upgrading: {}", msg);
@@ -87,12 +97,17 @@ impl MainReactor {
                     (Duration::ZERO, Effects::new())
                 }
                 CatchUpInstruction::CommitGenesis => match self.commit_genesis(effect_builder) {
-                    Ok(effects) => {
+                    GenesisInstruction::Validator(duration, effects) => {
                         info!("CatchUp: switch to Validate at genesis");
                         self.state = ReactorState::Validate;
-                        (Duration::ZERO, effects)
+                        (duration, effects)
                     }
-                    Err(msg) => (
+                    GenesisInstruction::NonValidator(duration, effects) => {
+                        info!("CatchUp: non-validator committed genesis");
+                        self.state = ReactorState::CatchUp;
+                        (duration, effects)
+                    }
+                    GenesisInstruction::Fatal(msg) => (
                         Duration::ZERO,
                         fatal!(effect_builder, "failed to commit genesis: {}", msg).ignore(),
                     ),
@@ -286,20 +301,7 @@ impl MainReactor {
         None
     }
 
-    fn commit_genesis(
-        &mut self,
-        effect_builder: EffectBuilder<MainEvent>,
-    ) -> Result<Effects<MainEvent>, String> {
-        let post_state_hash = match self.contract_runtime.commit_genesis(
-            self.chainspec.clone().as_ref(),
-            self.chainspec_raw_bytes.clone().as_ref(),
-        ) {
-            Ok(success) => success.post_state_hash,
-            Err(error) => {
-                return Err(error.to_string());
-            }
-        };
-
+    fn commit_genesis(&mut self, effect_builder: EffectBuilder<MainEvent>) -> GenesisInstruction {
         let genesis_timestamp = match self
             .chainspec
             .protocol_config
@@ -307,42 +309,81 @@ impl MainReactor {
             .genesis_timestamp()
         {
             None => {
-                return Err("must have genesis timestamp".to_string());
+                return GenesisInstruction::Fatal(
+                    "CommitGenesis: invalid chainspec activation point".to_string(),
+                );
             }
             Some(timestamp) => timestamp,
+        };
+
+        // global state starts empty and gets populated based upon chainspec artifacts
+        let post_state_hash = match self.contract_runtime.commit_genesis(
+            self.chainspec.clone().as_ref(),
+            self.chainspec_raw_bytes.clone().as_ref(),
+        ) {
+            Ok(success) => success.post_state_hash,
+            Err(error) => {
+                return GenesisInstruction::Fatal(error.to_string());
+            }
         };
 
         info!(
             %post_state_hash,
             %genesis_timestamp,
             network_name = %self.chainspec.network_config.name,
-            "successfully ran genesis"
+            "CommitGenesis: successful commit; initializing contract runtime"
         );
 
-        let next_block_height = 0;
+        let genesis_block_height = 0;
         self.initialize_contract_runtime(
-            next_block_height,
+            genesis_block_height,
             post_state_hash,
             BlockHash::default(),
             Digest::default(),
-        )?;
+        );
 
-        let finalized_block = FinalizedBlock::new(
+        let era_id = EraId::default();
+
+        // as this is a genesis validator, there is no historical syncing necessary
+        // thus, the retrograde latch is immediately set
+        self.validator_matrix
+            .register_retrograde_latch(Some(era_id));
+
+        // new networks will create a switch block at genesis to
+        // surface the genesis validators. older networks did not
+        // have this behavior.
+        let genesis_switch_block = FinalizedBlock::new(
             BlockPayload::default(),
             Some(EraReport::default()),
             genesis_timestamp,
-            EraId::default(),
-            next_block_height,
+            era_id,
+            genesis_block_height,
             PublicKey::System,
         );
 
-        Ok(effect_builder
+        // this genesis block has no deploys, and will get
+        // handed off to be stored & marked complete after
+        // sufficient finality signatures have been collected.
+        let effects = effect_builder
             .enqueue_block_for_execution(
-                finalized_block,
+                genesis_switch_block,
                 vec![],
                 MetaBlockState::new_not_to_be_gossiped(),
             )
-            .ignore())
+            .ignore();
+
+        if self
+            .chainspec
+            .network_config
+            .accounts_config
+            .is_genesis_validator(self.validator_matrix.public_signing_key())
+        {
+            // validators should switch over and start making blocks
+            GenesisInstruction::Validator(Duration::ZERO, effects)
+        } else {
+            // non-validators should start receiving gossip about the block at height 1 soon
+            GenesisInstruction::NonValidator(self.control_logic_default_delay.into(), effects)
+        }
     }
 
     fn upgrading_instruction(&self) -> UpgradingInstruction {
@@ -357,7 +398,7 @@ impl MainReactor {
         effect_builder: EffectBuilder<MainEvent>,
     ) -> Result<Effects<MainEvent>, String> {
         info!("{:?}: committing upgrade", self.state);
-        let previous_block_header = match &self.switch_block {
+        let previous_block_header = match &self.switch_block_header {
             None => {
                 return Err("switch_block should be Some".to_string());
             }
@@ -385,7 +426,7 @@ impl MainReactor {
                         post_state_hash,
                         previous_block_header.block_hash(),
                         previous_block_header.accumulated_seed(),
-                    )?;
+                    );
 
                     let finalized_block = FinalizedBlock::new(
                         BlockPayload::default(),
@@ -430,7 +471,7 @@ impl MainReactor {
     }
 
     pub(super) fn should_commit_upgrade(&self) -> bool {
-        let highest_switch_block_header = match &self.switch_block {
+        let highest_switch_block_header = match &self.switch_block_header {
             None => {
                 return false;
             }
@@ -455,7 +496,8 @@ impl MainReactor {
                     *state_root_hash,
                     block_hash,
                     accumulated_seed,
-                )
+                );
+                Ok(())
             }
             Ok(None) => {
                 Ok(()) // noop
@@ -470,7 +512,7 @@ impl MainReactor {
         pre_state_root_hash: Digest,
         parent_hash: BlockHash,
         parent_seed: Digest,
-    ) -> Result<(), String> {
+    ) {
         // a better approach might be to have an announcement for immediate switch block
         // creation, which the contract runtime handles and sets itself into
         // the proper state to handle the unexpected block.
@@ -481,10 +523,7 @@ impl MainReactor {
             parent_hash,
             parent_seed,
         );
-        self.contract_runtime
-            .set_initial_state(initial_pre_state)
-            .map_err(|err| err.to_string())?;
-        Ok(())
+        self.contract_runtime.set_initial_state(initial_pre_state);
     }
 
     pub(super) fn update_last_progress(
@@ -522,7 +561,7 @@ impl MainReactor {
                 Ok(highest_switch_block_header) => highest_switch_block_header,
                 Err(err) => return Err(err.to_string()),
             };
-        self.switch_block = maybe_highest_switch_block_header.first().cloned();
+        self.switch_block_header = maybe_highest_switch_block_header.first().cloned();
         Ok(())
     }
 }
