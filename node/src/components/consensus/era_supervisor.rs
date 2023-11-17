@@ -44,7 +44,8 @@ use crate::{
             metrics::Metrics,
             validator_change::{ValidatorChange, ValidatorChanges},
             ActionId, ChainspecConsensusExt, Config, ConsensusMessage, ConsensusRequestMessage,
-            Event, HighwayProtocol, NewBlockPayload, ReactorEventT, ResolveValidity, TimerId, Zug,
+            Event, HighwayProtocol, NewBlockPayload, ProposedBlockValidationResult, ReactorEventT,
+            TimerId, Zug,
         },
         network::blocklist::BlocklistJustification,
     },
@@ -871,9 +872,9 @@ impl EraSupervisor {
         &mut self,
         effect_builder: EffectBuilder<REv>,
         rng: &mut NodeRng,
-        resolve_validity: ResolveValidity,
+        resolve_validity: ProposedBlockValidationResult,
     ) -> Effects<Event> {
-        let ResolveValidity {
+        let ProposedBlockValidationResult {
             era_id,
             sender,
             proposed_block,
@@ -1143,7 +1144,7 @@ impl EraSupervisor {
                     return self.resolve_validity(
                         effect_builder,
                         rng,
-                        ResolveValidity {
+                        ProposedBlockValidationResult {
                             era_id,
                             sender,
                             proposed_block,
@@ -1391,7 +1392,7 @@ where
         // block_payload within the current era to determine if we are facing a replay
         // attack.
         if deploy_era_id < proposed_block_era_id {
-            return Event::ResolveValidity(ResolveValidity {
+            return Event::ResolveValidity(ProposedBlockValidationResult {
                 era_id: proposed_block_era_id,
                 sender,
                 proposed_block: proposed_block.clone(),
@@ -1405,7 +1406,7 @@ where
         .validate_block(sender_for_validate_block, proposed_block.clone())
         .await;
 
-    Event::ResolveValidity(ResolveValidity {
+    Event::ResolveValidity(ProposedBlockValidationResult {
         era_id: proposed_block_era_id,
         sender,
         proposed_block,

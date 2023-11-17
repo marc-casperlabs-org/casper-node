@@ -133,7 +133,7 @@ pub struct NewBlockPayload {
 
 /// The result of validation of a ProposedBlock.
 #[derive(DataSize, Debug, From)]
-pub struct ResolveValidity {
+pub struct ProposedBlockValidationResult {
     era_id: EraId,
     sender: NodeId,
     proposed_block: ProposedBlock<ClContext>,
@@ -167,7 +167,7 @@ pub(crate) enum Event {
         header_hash: BlockHash,
     },
     /// The proposed block has been validated.
-    ResolveValidity(ResolveValidity),
+    ResolveValidity(ProposedBlockValidationResult),
     /// Deactivate the era with the given ID, unless the number of faulty validators increases.
     DeactivateEra {
         era_id: EraId,
@@ -277,7 +277,7 @@ impl Display for Event {
                 "A block has been added to the linear chain: {}",
                 header_hash,
             ),
-            Event::ResolveValidity(ResolveValidity {
+            Event::ResolveValidity(ProposedBlockValidationResult {
                 era_id,
                 sender,
                 proposed_block,
