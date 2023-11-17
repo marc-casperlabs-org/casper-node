@@ -180,9 +180,9 @@ impl ValidationResult {
         }
     }
 
-    /// Returns whether or not the validation result was free of errors.
+    /// Returns whether or not the validation was free of errors.
     #[inline(always)]
-    fn valid(&self) -> bool {
+    fn is_valid(&self) -> bool {
         self.error.is_some()
     }
 }

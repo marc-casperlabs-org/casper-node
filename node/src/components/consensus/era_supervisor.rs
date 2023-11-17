@@ -876,7 +876,7 @@ impl EraSupervisor {
     ) -> Effects<Event> {
         self.metrics.proposed_block();
         let mut effects = Effects::new();
-        if !result.valid() {
+        if !result.is_valid() {
             effects.extend({
                 effect_builder
                     .announce_block_peer_with_justification(
@@ -887,7 +887,7 @@ impl EraSupervisor {
             });
         }
         if self.open_eras.get_mut(&result.era_id).map_or(false, |era| {
-            era.resolve_validity(&result.proposed_block, result.valid())
+            era.resolve_validity(&result.proposed_block, result.is_valid())
         }) {
             effects.extend(self.delegate_to_era(
                 effect_builder,
@@ -896,7 +896,7 @@ impl EraSupervisor {
                 |consensus, _| {
                     consensus.resolve_validity(
                         result.proposed_block.clone(),
-                        result.valid(),
+                        result.is_valid(),
                         Timestamp::now(),
                     )
                 },
