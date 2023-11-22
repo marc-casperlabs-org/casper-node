@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
         with:
           persist-credentials: false
-      - uses: marc-casperlabs/casper-ci@v1
+      - uses: marc-casperlabs/casper-ci@v2
 
       - name: fmt
         run: make check-format
@@ -44,6 +44,6 @@ jobs:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
         with:
           persist-credentials: false
-      - uses: marc-casperlabs/casper-ci@v1
+      - uses: marc-casperlabs/casper-ci@v2
       - name: run nightly test scripts
         run: bash -c ./ci/nightly-test.sh
