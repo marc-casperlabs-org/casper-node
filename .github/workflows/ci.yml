@@ -18,14 +18,12 @@ on:
 
 jobs:
   lints:
-    name: run CI
+    name: Lint, check and audit
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
         with:
           persist-credentials: false
-
       - uses: marc-casperlabs/casper-ci@v1
 
       - name: fmt
@@ -39,3 +37,13 @@ jobs:
 
       - name: audit
         run: make audit
+  nightly:
+    name: Run "nightly" tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
+        with:
+          persist-credentials: false
+      - uses: marc-casperlabs/casper-ci@v1
+      - name: run nightly test scripts
+        run: bash -c ./ci/nightly-test.sh
