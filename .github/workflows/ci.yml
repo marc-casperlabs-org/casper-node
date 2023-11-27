@@ -19,7 +19,7 @@ on:
 jobs:
   lints:
     name: Lint, check and audit
-    runs-on: ubuntu-latest
+    runs-on: casper-ci-test-runner-set
     steps:
       - uses: actions/checkout@ec3a7ce113134d7a93b817d10a8272cb61118579 #tag v2.4.0
         with:
